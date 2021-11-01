@@ -1,11 +1,19 @@
 import sys
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template
 from random import randint
 
-app = Flask(__name__)
+app = Flask(
+    __name__, template_folder='../build', static_folder='../build', static_url_path=''
+)
+
 
 @app.route('/')
 def index():
+    return render_template('index.html')
+
+
+@app.route('/message')
+def message():
     return jsonify({'message': 'Hello, World!'})
 
 
