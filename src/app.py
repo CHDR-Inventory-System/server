@@ -1,17 +1,21 @@
 import routes.inventory
 import logging
 from flask import Flask, jsonify, render_template
+from flask_cors import CORS
 
 app = Flask(
     __name__, template_folder='../build', static_folder='../build', static_url_path=''
 )
+CORS(app)
 
 # This makes sure that log messages get written to /logs/gunicorn_error.log
 gunicorn_logger = logging.getLogger('gunicorn.error')
 app.logger.handlers = gunicorn_logger.handlers
 app.logger.setLevel(gunicorn_logger.level)
 
-app.register_blueprint(routes.inventory.inventory_blueprint, url_prefix='/api/inventory')
+app.register_blueprint(
+    routes.inventory.inventory_blueprint, url_prefix='/api/inventory'
+)
 
 
 @app.route('/')
