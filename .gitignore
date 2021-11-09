@@ -4,6 +4,5 @@
 /logs
 /venv
 .env
-/config
 /build
 __pycache__
