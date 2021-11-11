@@ -1,16 +1,17 @@
 import mysql.connector
 from util.config import secrets
 from flask import current_app
+from typing import Tuple, Optional
 
 
 def _get_sql_connection():
     try:
         return mysql.connector.connect(
-            host=secrets['DB_HOST'],
-            user=secrets['DB_USERNAME'],
-            password=secrets['DB_PASSWORD'],
-            database=secrets['DB_DATABASE'],
-            connection_timeout=secrets['DB_CONNECTION_TIMEOUT'],
+            host=secrets["DB_HOST"],
+            user=secrets["DB_USERNAME"],
+            password=secrets["DB_PASSWORD"],
+            database=secrets["DB_DATABASE"],
+            connection_timeout=secrets["DB_CONNECTION_TIMEOUT"],
         )
     except Exception as err:
         current_app.logger.exception(str(err))
@@ -28,7 +29,7 @@ class Database:
     connection = None
 
     @staticmethod
-    def execute_query(sql_query, *variables):
+    def query(sql_query: str, *variables: Optional[Tuple[str, ...]]):
         """
         Takes an sql query string and the variables that follow. Note the
         number of "%s" characters needs to match the number of variables
