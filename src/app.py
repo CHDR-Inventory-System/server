@@ -1,7 +1,7 @@
 import sys
 import routes.inventory
 import logging
-from flask import Flask, jsonify, render_template
+from flask import Flask, render_template
 from flask_cors import CORS
 
 app = Flask(
