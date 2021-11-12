@@ -1,60 +1,46 @@
 import mysql.connector
+import functools
 from util.config import secrets
 from flask import current_app
-from typing import Tuple, Optional
 
-
-def _get_sql_connection():
-    try:
-        return mysql.connector.connect(
-            host=secrets["DB_HOST"],
-            user=secrets["DB_USERNAME"],
-            password=secrets["DB_PASSWORD"],
-            database=secrets["DB_DATABASE"],
-            connection_timeout=secrets["DB_CONNECTION_TIMEOUT"],
-        )
-    except Exception as err:
-        current_app.logger.exception(str(err))
-        return None
+POOL_NAME = "database_pool"
 
 
 class Database:
     """
-    A wrapper class that manages the MySQL server connection. Note that
-    after Database.execute_query() is called, you MUST call
-    Database.close_connection() after you've closed the cursor that execute_query
-    returns. This is so that there
+    A wrapper class that manages the MySQL connection pool.
     """
 
-    connection = None
+    connection_pool = mysql.connector.connect(
+        pool_name=POOL_NAME,
+        pool_size=5,
+        host=secrets["DB_HOST"],
+        user=secrets["DB_USERNAME"],
+        password=secrets["DB_PASSWORD"],
+        database=secrets["DB_DATABASE"],
+        connection_timeout=secrets["DB_CONNECTION_TIMEOUT"],
+    )
 
     @staticmethod
-    def query(sql_query: str, *variables: Optional[Tuple[str, ...]]):
+    def with_connection(func):
         """
-        Takes an sql query string and the variables that follow. Note the
-        number of "%s" characters needs to match the number of variables
-        passed to this function.
+        A decorator that passess a connection and cursor from the connection pool
+        to the function in its kwargs. Functions that use this don't need to worry
+        about closing the cursor or connection since it's done automatically in
+        this decorator.
         """
-        try:
-            if Database.connection is None:
-                Database.connection = _get_sql_connection()
-            elif Database.connection.is_closed():
-                Database.connection.reconnect(attempts=3, delay=5)
 
-            cursor = Database.connection.cursor()
-        except mysql.connector.OperationalError:
-            # If the connection isn't available, try to reconnect
-            Database.connection = _get_sql_connection()
-            cursor = Database.connection.cursor()
-        except Exception as err:
-            current_app.logger.exception(str(err))
-            return None
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                connection = mysql.connector.connect(pool_name=POOL_NAME)
+                cursor = connection.cursor(dictionary=True)
+                return func(*args, cursor=cursor, connection=connection, **kwargs)
+            except mysql.connector.Error as err:
+                current_app.logger.exception(str(err))
+                connection.rollback()
+            finally:
+                cursor.close()
+                connection.close()
 
-        cursor.execute(sql_query % variables)
-
-        return cursor
-
-    @staticmethod
-    def close_connection():
-        if Database.connection:
-            Database.connection.close()
+        return wrapper
