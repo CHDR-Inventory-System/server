@@ -14,11 +14,11 @@ class Database:
     connection_pool = mysql.connector.connect(
         pool_name=POOL_NAME,
         pool_size=5,
+        connection_timeout=5,
         host=secrets["DB_HOST"],
         user=secrets["DB_USERNAME"],
         password=secrets["DB_PASSWORD"],
         database=secrets["DB_DATABASE"],
-        connection_timeout=secrets["DB_CONNECTION_TIMEOUT"],
     )
 
     @staticmethod

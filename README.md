@@ -11,9 +11,6 @@ DB_HOST=some-ip
 DB_USERNAME=some-username
 DB_PASSWORD=-some-password
 DB_DATABASE=some-database-name
-# How long before a connection to the database times out.
-# The default is 60 seconds.
-DB_CONNECTION_TIMEOUT=60
 ```
 
 1. Make sure you're in the root directory of the project and run `python3 -m venv ./venv` to create a virtual environment. Once that finishes, run `source ./venv/bin/activate` on macOS/Linux or `.\env\Scripts\activate` on Windows to activate the virtual environment.

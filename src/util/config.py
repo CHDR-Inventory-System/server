@@ -8,7 +8,6 @@ secrets = {
     "DB_USERNAME": os.getenv("DB_USERNAME"),
     "DB_PASSWORD": os.getenv("DB_PASSWORD"),
     "DB_DATABASE": os.getenv("DB_DATABASE"),
-    "DB_CONNECTION_TIMEOUT": int(os.getenv("DB_CONNECTION_TIMEOUT", default=60)),
 }
 
 
