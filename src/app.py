@@ -1,6 +1,6 @@
 import sys
-import routes.inventory
 import logging
+from routes.inventory import inventory_blueprint
 from flask import Flask, render_template
 from flask_cors import CORS
 
@@ -15,9 +15,7 @@ gunicorn_logger = logging.getLogger("gunicorn.error")
 app.logger.handlers = gunicorn_logger.handlers
 app.logger.setLevel(gunicorn_logger.level)
 
-app.register_blueprint(
-    routes.inventory.inventory_blueprint, url_prefix="/api/inventory"
-)
+app.register_blueprint(inventory_blueprint, url_prefix="/api/inventory")
 
 
 @app.route("/")
