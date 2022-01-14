@@ -7,6 +7,7 @@ from flask_cors import CORS
 app = Flask(
     __name__, template_folder="../build", static_folder="../build", static_url_path=""
 )
+app.config["IMAGE_FOLDER"] = "./images"
 
 CORS(app)
 

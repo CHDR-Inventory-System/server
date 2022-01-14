@@ -5,4 +5,5 @@
 /venv
 .env
 /build
+/images
 __pycache__

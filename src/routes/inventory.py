@@ -1,9 +1,11 @@
 import mysql.connector
+import os
 from flask import Blueprint, jsonify, current_app, request
 from util.database import Database
-from util.response_util import create_error_response, convert_javascript_date
+from util.response import create_error_response, convert_javascript_date
 
 inventory_blueprint = Blueprint("inventory", __name__)
+VALID_IMAGE_EXTENSIONS = {"jpg", "png", "jpeg"}
 
 
 @inventory_blueprint.route("/", methods=["GET"])
@@ -12,6 +14,9 @@ def get_all(**kwargs):
     cursor = kwargs["cursor"]
 
     try:
+        cursor.execute("SELECT * FROM itemImage")
+        images = cursor.fetchall()
+
         cursor.execute(
             """
             SELECT * from item
@@ -24,6 +29,10 @@ def get_all(**kwargs):
         items = []
 
         for row in cursor.fetchall():
+            row["images"] = [
+                image for image in images if image["itemChild"] == row["ID"]
+            ]
+
             # These booleans are stored as bits in the database so we
             # need to convert them to boleans before sending the response
             row["available"] = bool(row["available"])
@@ -45,16 +54,36 @@ def delete_item(item_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
 
+    # Before we delete the item, we first need to delete the
+    # image files from the server. If this fails, we can still
+    # delete from the database
     try:
-        cursor.execute("DELETE FROM itemChild WHERE item = %s" % item_id)
-        row_count = cursor.rowcount
+        cursor.execute(
+            "SELECT imagePath FROM itemImage WHERE itemChild = %s" % (item_id,)
+        )
 
-        if row_count > 0:
-            cursor.execute("DELETE FROM item WHERE ID = %s" % item_id)
+        for image in cursor.fetchall():
+            image_path = image["imagePath"]
+
+            if os.path.exists(image_path):
+                os.remove(image_path)
+            else:
+                current_app.logger.warn(
+                    f"{image_path} does not exist, skipping deletion..."
+                )
+
+    except Exception as err:
+        current_app.logger.exception(str(err))
+
+    try:
+        cursor.execute("DELETE FROM itemImage WHERE itemChild = %s" % (item_id,))
+        cursor.execute("DELETE FROM itemChild WHERE item = %s" % (item_id,))
+        cursor.execute("DELETE FROM item WHERE ID = %s" % (item_id,))
 
         connection.commit()
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
+        connection.rollback()
         return create_error_response("An unexpected error occurred", 500)
 
     return jsonify({"status": "Success"})
@@ -64,17 +93,21 @@ def delete_item(item_id, **kwargs):
 @Database.with_connection
 def get_item_by_id(item_id, **kwargs):
     cursor = kwargs["cursor"]
-    query = """
-        SELECT * FROM item
-        LEFT JOIN itemChild on itemChild.item = item.ID
-        WHERE item.ID = %(item_id)s
-        UNION
-        SELECT * FROM item
-        RIGHT JOIN itemChild on itemChild.item = item.ID
-        WHERE item.ID = %(item_id)s
-    """
 
     try:
+        cursor.execute("SELECT * from itemImage WHERE itemChild = %s" % (item_id,))
+        images = cursor.fetchall()
+
+        query = """
+            SELECT * FROM item
+            LEFT JOIN itemChild on itemChild.item = item.ID
+            WHERE item.ID = %(item_id)s
+            UNION
+            SELECT * FROM item
+            RIGHT JOIN itemChild on itemChild.item = item.ID
+            WHERE item.ID = %(item_id)s
+        """
+
         cursor.execute(query, {"item_id": item_id})
         result = cursor.fetchone()
 
@@ -84,6 +117,7 @@ def get_item_by_id(item_id, **kwargs):
         result["moveable"] = bool(result["moveable"])
         result["available"] = bool(result["available"])
         result["main"] = bool(result["main"])
+        result["images"] = images
 
         return jsonify(result)
     except mysql.connector.Error as err:
@@ -153,6 +187,45 @@ def get_item_by_barcode(barcode, **kwargs):
         return create_error_response("An unexpected error occurred", 500)
 
 
+@inventory_blueprint.route("/<int:item_id>/uploadImage", methods=["POST"])
+@Database.with_connection
+def upload_images(item_id, **kwargs):
+    cursor = kwargs["cursor"]
+    connection = kwargs["connection"]
+    images = request.files.getlist("image")
+
+    for image in images:
+        if image.filename.split(".")[-1] not in VALID_IMAGE_EXTENSIONS:
+            extensions = ", ".join(VALID_IMAGE_EXTENSIONS)
+            return create_error_response(f"Extension must be one of {extensions}", 400)
+
+    try:
+        os.makedirs("images", exist_ok=True)
+
+        for image in images:
+            image_path = os.path.join(
+                current_app.config["IMAGE_FOLDER"], image.filename
+            )
+            image.save(image_path)
+
+            query = """
+                INSERT INTO itemImage (itemChild, imagePath)
+                VALUES ("%s", "%s")
+            """
+
+            cursor.execute(query % (item_id, image_path))
+
+        connection.commit()
+    except Exception as err:
+        current_app.logger.exception(str(err))
+        connection.rollback()
+        return create_error_response(
+            "An unexpected error occurred uploading image", 500
+        )
+
+    return jsonify({"status": "Success"})
+
+
 @inventory_blueprint.route("/add", methods=["POST"])
 @Database.with_connection
 def add_item(**kwargs):
@@ -163,6 +236,7 @@ def add_item(**kwargs):
     item_values = {}
 
     try:
+        # These values are required so we need to check for any key errors
         item_values["barcode"] = post_data["barcode"]
         item_values["available"] = int(post_data["available"])
         item_values["moveable"] = int(post_data["moveable"])
@@ -184,6 +258,7 @@ def add_item(**kwargs):
         item_child_values["vendor_name"] = post_data.get("vendorName")
         item_child_values["purchase_date"] = post_data.get("purchaseDate")
         item_child_values["vendor_price"] = post_data.get("vendorPrice")
+        item_child_values["main"] = int(post_data.get("main", False))
 
         # Only convert these values if they exists. Otherwise, we'll want them
         # to be null in the database
@@ -222,7 +297,8 @@ def add_item(**kwargs):
                 serial,
                 vendorName,
                 vendorPrice,
-                purchaseDate
+                purchaseDate,
+                main
             )
             VALUES (
                 %(item_id)s,
@@ -232,7 +308,8 @@ def add_item(**kwargs):
                 %(serial)s,
                 %(vendor_name)s,
                 %(vendor_price)s,
-                %(purchase_date)s
+                %(purchase_date)s,
+                %(main)s
             )
         """
 
@@ -243,7 +320,9 @@ def add_item(**kwargs):
         connection.rollback()
         return create_error_response("An unexpected error occurred", 500)
 
-    return jsonify({"status": "Success"})
+    # The item id is returned here so that the client can easily grab
+    # it and use it to upload images immediately afterwards
+    return jsonify({"itemId": item_child_values["item_id"]})
 
 
 @inventory_blueprint.route("/<int:item_id>", methods=["PUT"])
