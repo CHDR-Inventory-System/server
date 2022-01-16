@@ -17,18 +17,29 @@ def get_all(**kwargs):
         cursor.execute("SELECT * FROM itemImage")
         images = cursor.fetchall()
 
+        # Since MySQL doesn't have full join, we'll have to do a left join
+        # unioned with a right join. Because that returns everything from
+        # both tables, we need to make sure columns with the same name
+        # aren't included twice.
         cursor.execute(
             """
-            SELECT * from item
-            LEFT JOIN itemChild on itemChild.item = item.ID
+            SELECT
+                A.barcode, A.available, A.moveable, A.location, A.quantity, B.*
+            FROM item AS A
+            LEFT JOIN itemChild AS B on B.item = A.ID
             UNION
-            SELECT * from item
-            RIGHT JOIN itemChild on itemChild.item = item.ID
+            SELECT
+                A.barcode, A.available, A.moveable, A.location, A.quantity, B.*
+            FROM item AS A
+            RIGHT JOIN itemChild B on B.item = A.ID
             """
         )
-        items = []
+        all_items = cursor.fetchall()
+        main_items = [item for item in all_items if bool(item["main"])]
+        child_items = [item for item in all_items if not bool(item["main"])]
+        response = []
 
-        for row in cursor.fetchall():
+        for row in main_items + child_items:
             row["images"] = [
                 image for image in images if image["itemChild"] == row["ID"]
             ]
@@ -38,10 +49,18 @@ def get_all(**kwargs):
             row["available"] = bool(row["available"])
             row["moveable"] = bool(row["moveable"])
             row["main"] = bool(row["main"])
+            # Child rows won't have children but we'll add the property
+            # the property anyway to keep the API response consistent
+            row["children"] = []
+            response.append(row)
 
-            items.append(row)
+        for row in main_items:
+            row["children"] = [
+                child for child in child_items if child["item"] == row["item"]
+            ]
+            response.append(row)
 
-        return jsonify(items)
+        return jsonify(response)
 
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
@@ -99,13 +118,17 @@ def get_item_by_id(item_id, **kwargs):
         images = cursor.fetchall()
 
         query = """
-            SELECT * FROM item
-            LEFT JOIN itemChild on itemChild.item = item.ID
-            WHERE item.ID = %(item_id)s
+            SELECT
+                A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+            FROM itemChild AS A
+            LEFT JOIN item AS B on A.item = B.ID
+            WHERE A.ID = %(item_id)s
             UNION
-            SELECT * FROM item
-            RIGHT JOIN itemChild on itemChild.item = item.ID
-            WHERE item.ID = %(item_id)s
+            SELECT
+                A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+            FROM itemChild AS A
+            LEFT JOIN item AS B on A.item = B.ID
+            WHERE A.ID = %(item_id)s
         """
 
         cursor.execute(query, {"item_id": item_id})
@@ -118,6 +141,38 @@ def get_item_by_id(item_id, **kwargs):
         result["available"] = bool(result["available"])
         result["main"] = bool(result["main"])
         result["images"] = images
+        result["children"] = []
+
+        if result["main"]:
+            query = """
+                SELECT
+                    A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+                FROM itemChild AS A
+                LEFT JOIN item AS B on A.item = B.ID
+                WHERE A.item = %(item)s AND A.main = 0
+                UNION
+                SELECT
+                    A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+                FROM itemChild AS A
+                LEFT JOIN item AS B on A.item = B.ID
+                WHERE A.item = %(item)s AND A.main = 0
+            """
+
+            cursor.reset()
+            cursor.execute(query, {"item": result["item"]})
+            children = cursor.fetchall()
+
+            for child in children:
+                cursor.execute(
+                    "SELECT * FROM itemImage WHERE itemChild = %s" % (child["ID"],)
+                )
+
+                child["images"] = cursor.fetchall()
+                child["moveable"] = bool(child["moveable"])
+                child["available"] = bool(child["available"])
+                child["main"] = bool(child["main"])
+
+            result["children"] = children
 
         return jsonify(result)
     except mysql.connector.Error as err:
@@ -130,27 +185,65 @@ def get_item_by_id(item_id, **kwargs):
 def get_item_by_name(**kwargs):
     cursor = kwargs["cursor"]
     query = """
-        SELECT * FROM itemChild
-        LEFT JOIN item on itemChild.item = item.ID
-        WHERE name LIKE %(item_name)s
+        SELECT
+            A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+        FROM itemChild AS A
+        LEFT JOIN item AS B on A.item = B.ID
+        WHERE name LIKE %(item_name)s AND A.main = 1
         UNION
-        SELECT * FROM itemChild
-        RIGHT JOIN item on itemChild.item = item.ID
-        WHERE name LIKE %(item_name)s
+        SELECT
+            A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+        FROM itemChild AS A
+        RIGHT JOIN item AS B on A.item = B.ID
+        WHERE name LIKE %(item_name)s AND A.main = 1
     """
-    item_name = request.args.get("name", default="", type=str)
+    item_name = request.args.get("query", default="", type=str)
 
     try:
         cursor.execute(query, {"item_name": f"%{item_name}%"})
-        items = []
+        items = cursor.fetchall()
+        response = []
 
-        for row in cursor.fetchall():
+        for row in items:
             row["available"] = bool(row["available"])
             row["moveable"] = bool(row["moveable"])
+            row["main"] = bool(row["main"])
 
-            items.append(row)
+            cursor.execute(
+                "SELECT * FROM itemImage WHERE itemChild = %s" % (row["ID"],)
+            )
+            row["images"] = cursor.fetchall()
 
-        return jsonify(items)
+            query = """
+                SELECT
+                    A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+                FROM itemChild AS A
+                LEFT JOIN item AS B on A.item = B.ID
+                WHERE item = %(item)s AND A.main = 0
+                UNION
+                SELECT
+                    A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+                FROM itemChild AS A
+                RIGHT JOIN item AS B on A.item = B.ID
+                WHERE item = %(item)s AND A.main = 0
+            """
+            cursor.execute(query, {"item": row["item"]})
+
+            row["children"] = cursor.fetchall()
+
+            for child in row["children"]:
+                child["moveable"] = bool(child["moveable"])
+                child["main"] = bool(child["main"])
+                child["available"] = bool(child["available"])
+
+                cursor.execute(
+                    "SELECT * FROM itemImage WHERE itemChild = %s" % (child["ID"],)
+                )
+                child["images"] = cursor.fetchall()
+
+            response.append(row)
+
+        return jsonify(response)
     except mysql.connector.Error as err:
         current_app.log_exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
@@ -161,27 +254,46 @@ def get_item_by_name(**kwargs):
 def get_item_by_barcode(barcode, **kwargs):
     cursor = kwargs["cursor"]
     query = """
-        SELECT * FROM item
-        LEFT JOIN itemChild on itemChild.item = item.ID
-        WHERE barcode = %(barcode)s
+        SELECT
+            A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+        FROM itemChild AS A
+        LEFT JOIN item AS B on A.item = B.ID
+        WHERE B.barcode = %(barcode)s
         UNION
-        SELECT * FROM item
-        RIGHT JOIN itemChild on itemChild.item = item.ID
-        WHERE barcode = %(barcode)s
+        SELECT
+            A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+        FROM itemChild AS A
+        RIGHT JOIN item AS B on A.item = B.ID
+        WHERE B.barcode = %(barcode)s
     """
 
     try:
         cursor.execute(query, {"barcode": barcode})
-        items = []
+        all_items = cursor.fetchall()
 
-        for row in cursor.fetchall():
+        if len(all_items) == 0:
+            return create_error_response(f"No item found with barcode {barcode}", 404)
+
+        # Find the first parent item that has this barcode and add children to
+        # the main item if it has children. This assumes all barcodes are unique
+        main_item = next(item for item in all_items if bool(item["main"]))
+        child_items = [item for item in all_items if not bool(item["main"])]
+
+        for row in child_items + [main_item]:
+            cursor.execute(
+                "SELECT * FROM itemImage WHERE itemChild = %s" % (row["ID"],)
+            )
+            row["images"] = cursor.fetchall()
+            row["children"] = []
             row["available"] = bool(row["available"])
             row["moveable"] = bool(row["moveable"])
             row["main"] = bool(row["main"])
 
-            items.append(row)
+        main_item["children"] = [
+            child for child in child_items if child["item"] == row["item"]
+        ]
 
-        return jsonify(items)
+        return jsonify(main_item)
     except mysql.connector.Error as err:
         current_app.log_exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
@@ -336,7 +448,7 @@ def update_item(item_id, **kwargs):
     if not put_data:
         return create_error_response("A body is required", 400)
 
-    # Values relating to the
+    # Values from the 'itemChild' table
     name = put_data.get("name")
     description = put_data.get("description")
     item_type = put_data.get("type")
@@ -345,7 +457,7 @@ def update_item(item_id, **kwargs):
     vendor_price = put_data.get("vendorPrice")
     purchase_date = put_data.get("purchaseDate")
 
-    # Values relating to the 'item' table
+    # Values from the 'item' table
     barcode = put_data.get("barcode")
     available = put_data.get("available")
     moveable = put_data.get("moveable")
