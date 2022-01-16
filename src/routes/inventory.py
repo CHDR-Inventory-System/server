@@ -95,6 +95,7 @@ def delete_item(item_id, **kwargs):
         current_app.logger.exception(str(err))
 
     try:
+        cursor.execute("DELETE FROM reservation WHERE item = %s" % (item_id,))
         cursor.execute("DELETE FROM itemImage WHERE itemChild = %s" % (item_id,))
         cursor.execute("DELETE FROM itemChild WHERE item = %s" % (item_id,))
         cursor.execute("DELETE FROM item WHERE ID = %s" % (item_id,))
@@ -370,7 +371,7 @@ def add_item(**kwargs):
         item_child_values["vendor_name"] = post_data.get("vendorName")
         item_child_values["purchase_date"] = post_data.get("purchaseDate")
         item_child_values["vendor_price"] = post_data.get("vendorPrice")
-        item_child_values["main"] = int(post_data.get("main", False))
+        item_child_values["main"] = int(post_data.get("main", True))
 
         # Only convert these values if they exists. Otherwise, we'll want them
         # to be null in the database
