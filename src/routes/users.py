@@ -31,7 +31,7 @@ def do_register(**kwargs):
       #comfirm_Pwrd = incoming_data['Comfirm_pass'] 
 #set role and verified automatically to user and Admin and Super admnin or 0 to verified 
       verified_ = 0
-      role_ = 'User' 
+      role_ = 'User'
       
  #If variables were inserted then proceed  
       if nid_ and password_ and email_ and request.method == 'POST': 
