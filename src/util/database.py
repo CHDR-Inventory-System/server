@@ -32,10 +32,11 @@ class Database:
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            try:
+            try: 
+                secret_key = secrets["DB_KEY"]
                 connection = mysql.connector.connect(pool_name=POOL_NAME)
                 cursor = connection.cursor(dictionary=True)
-                return func(*args, cursor=cursor, connection=connection, **kwargs)
+                return func(*args, cursor=cursor, connection=connection, secret_key=secret_key, **kwargs)
             except mysql.connector.Error as err:
                 current_app.logger.exception(str(err))
                 connection.rollback()
