@@ -9,15 +9,15 @@ Create a `.env` file in the root directory that looks like this:
 ```ini
 DB_HOST=some-ip
 DB_USERNAME=some-username
-DB_PASSWORD=-some-password
+DB_PASSWORD=some-password
 DB_DATABASE=some-database-name
 ```
 
 1. Make sure you're in the root directory of the project and run `python3 -m venv ./venv` to create a virtual environment. Once that finishes, run `source ./venv/bin/activate` on macOS/Linux or `.\env\Scripts\activate` on Windows to activate the virtual environment.
 
-2. Run `pip install -r dev-requirements.txt` to install necessary dependencies.
+2. Run `pip3 install -r dev-requirements.txt` to install necessary dependencies.
 
-3. This repo makes use of [pre-commit](https://pre-commit.com/). After you activate the virtual environment, run `pre-commit install` to set up the pre-commit script and `pre-commit run --all-files` to test if the setup was successful. This step isn't required but it'll help catch errors down the line **before** you commit.
+3. This repo makes use of [pre-commit](https://pre-commit.com/) and [black](https://github.com/psf/black) to lint and format all files before they're committed. After you activate the virtual environment, run `pre-commit install` to set up the pre-commit script and `pre-commit run --all-files` to test it. If all was successful, you should see that `black` and `flake8` were run in the terminal. This step will help catch errors down the line **before** you commit.
 
 ## Running the Server
 
