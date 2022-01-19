@@ -1,8 +1,5 @@
 import sys
-<<<<<<< HEAD
 from routes.users import users_blueprint
-=======
->>>>>>> fb1af35f8d8bbf32aca52446b1da040637c47593
 import logging
 from routes.reservation import reservation_blueprint
 from routes.inventory import inventory_blueprint
@@ -24,14 +21,9 @@ gunicorn_logger = logging.getLogger("gunicorn.error")
 app.logger.handlers = gunicorn_logger.handlers
 app.logger.setLevel(gunicorn_logger.level)
 
-<<<<<<< HEAD
-app.register_blueprint(
-    users_blueprint, url_prefix="/api/users"
-)
-=======
+app.register_blueprint(users_blueprint, url_prefix="/api/users")
 app.register_blueprint(reservation_blueprint, url_prefix="/api/reservations")
 app.register_blueprint(inventory_blueprint, url_prefix="/api/inventory")
->>>>>>> fb1af35f8d8bbf32aca52446b1da040637c47593
 
 
 @app.route("/")
@@ -41,4 +33,4 @@ def index():
 
 if __name__ == "__main__":
     use_debug = "--debug" in sys.argv
-    app.run(port=4565, debug=use_debug) 
+    app.run(port=4565, debug=use_debug)

@@ -32,7 +32,7 @@ class Database:
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            try: 
+            try:
                 connection = mysql.connector.connect(pool_name=POOL_NAME)
                 cursor = connection.cursor(dictionary=True)
                 return func(*args, cursor=cursor, connection=connection, **kwargs)
@@ -43,4 +43,4 @@ class Database:
                 cursor.close()
                 connection.close()
 
-        return wrapper 
+        return wrapper
