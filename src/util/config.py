@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 secrets = {
-    "DB_KEY": os.getenv("DB_KEY"),
+    "JWT_SECRET_KEY": os.getenv("JWT_SECRET_KEY"),
     "DB_HOST": os.getenv("DB_HOST"),
     "DB_USERNAME": os.getenv("DB_USERNAME"),
     "DB_PASSWORD": os.getenv("DB_PASSWORD"),

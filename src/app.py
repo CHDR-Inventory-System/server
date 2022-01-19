@@ -3,12 +3,16 @@ from routes.users import users_blueprint
 import logging
 from flask import Flask, render_template
 from flask_cors import CORS
+from flask_jwt_extended import JWTManager
+from util.config import secrets
 
 app = Flask(
     __name__, template_folder="../build", static_folder="../build", static_url_path=""
 )
 
 CORS(app)
+app.config["JWT_SECRET_KEY"] = secrets["JWT_SECRET_KEY"]
+jwt = JWTManager(app)
 
 # This makes sure that log messages get written to /logs/gunicorn_error.log
 gunicorn_logger = logging.getLogger("gunicorn.error")
@@ -27,4 +31,4 @@ def index():
 
 if __name__ == "__main__":
     use_debug = "--debug" in sys.argv
-    app.run(port=4565, debug=use_debug)
+    app.run(port=4565, debug=use_debug) 
