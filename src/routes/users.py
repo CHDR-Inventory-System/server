@@ -1,13 +1,19 @@
+from decimal import ExtendedContext
 from multiprocessing import connection
 from unittest import removeResult
 from flask import Blueprint, jsonify,current_app,request,session
 from util.database import Database
-from util.response_util import create_error_response
+from util.response import create_error_response
 import datetime
 from datetime import datetime
 #current error that occurs in either in login if the below import is removed(JC)--> will figure out
 import datetime
-import re,jwt,re,bcrypt
+import re,bcrypt
+from flask_jwt_extended import create_access_token
+from flask_jwt_extended import get_jwt_identity
+from flask_jwt_extended import jwt_required
+from flask_jwt_extended import JWTManager
+
 
 
 
@@ -70,7 +76,6 @@ def do_login(**kwargs):
   try:
    cursor = kwargs["cursor"] 
    connection = kwargs["connection"] 
-   secret_key = kwargs["secret_key"]
 
 #Takes incoming data as json
    incoming_data = request.get_json()
@@ -87,8 +92,8 @@ def do_login(**kwargs):
       userid = exist_acc['ID']  
       
       if exist_acc: 
-        if bcrypt.checkpw(password_.encode('utf-8'), hash_pwrd.encode('utf-8')): 
-           my_token = jwt.encode({'user_id' : userid, 'exp' : datetime.datetime.utcnow() + datetime.timedelta(minutes=30)}, secret_key) 
+        if bcrypt.checkpw(password_.encode('utf-8'), hash_pwrd.encode('utf-8')):  
+           my_token = create_access_token(identity=userid)
  #might need to decode using ('utf-8') ^^ if we do not import datetime we will get an error.
            return jsonify({'token' : my_token})
                  
