@@ -40,5 +40,5 @@ def index():
 
 
 if __name__ == "__main__":
-    use_debug = "--debug" in sys.argv
-    app.run(port=4565, debug=use_debug)
+    use_reloader = "--reload" in sys.argv
+    app.run(port=4565, use_reloader=use_reloader)
