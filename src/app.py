@@ -7,15 +7,17 @@ from flask import Flask, render_template
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from util.config import secrets
+from util.email import Emailer
 
 app = Flask(
     __name__, template_folder="../build", static_folder="../build", static_url_path=""
 )
 app.config["IMAGE_FOLDER"] = "./images"
+app.config["JWT_SECRET_KEY"] = secrets["JWT_SECRET_KEY"]
 
 CORS(app)
-app.config["JWT_SECRET_KEY"] = secrets["JWT_SECRET_KEY"]
-jwt = JWTManager(app)
+JWTManager(app)
+Emailer.init(app)
 
 gunicorn_logger = logging.getLogger("gunicorn.error")
 app.logger.handlers = gunicorn_logger.handlers
