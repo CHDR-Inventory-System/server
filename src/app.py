@@ -14,6 +14,12 @@ app = Flask(
 )
 app.config["IMAGE_FOLDER"] = "./images"
 app.config["JWT_SECRET_KEY"] = secrets["JWT_SECRET_KEY"]
+app.config["MAIL_SERVER"] = secrets["EMAIL_SERVER"]
+app.config["MAIL_PORT"] = secrets["EMAIL_PORT"]
+app.config["MAIL_USERNAME"] = secrets["EMAIL_USERNAME"]
+app.config["MAIL_PASSWORD"] = secrets["EMAIL_PASSWORD"]
+app.config["MAIL_USE_SSL"] = secrets["EMAIL_USE_SSL"]
+app.config["MAIL_USE_TLS"] = secrets["EMAIL_USE_TLS"]
 
 CORS(app)
 JWTManager(app)
