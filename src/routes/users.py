@@ -1,4 +1,5 @@
-from flask import Blueprint, jsonify, request
+import mysql.connector
+from flask import Blueprint, jsonify, request, current_app
 from util.database import Database
 from util.response import create_error_response
 import re
@@ -156,3 +157,23 @@ def get_user_byID(id, **kwargs):
         return jsonify({"created": created_, "nid": nid_, "email": email_})
     else:
         return create_error_response("User does not exist", 404)
+
+
+@users_blueprint.route("/users", methods=["GET"])
+@Database.with_connection
+def get_all_users(**kwargs):
+    cursor = kwargs["cursor"]
+
+    # sql query to return all users in database with id, nid, email, created, and role
+    query = "SELECT ID, nid, email, role, created FROM users"
+    try:
+        cursor.execute(query)
+        # ? fetchall() returns a list of dictionaries where
+        # ? the keys are the column-names in the database
+        users = cursor.fetchall()
+
+        return jsonify(users)
+
+    except mysql.connector.Error as err:
+        current_app.logger.exception(str(err))
+        return create_error_response("An unexpected error occurred", 500)
