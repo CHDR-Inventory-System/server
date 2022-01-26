@@ -159,7 +159,7 @@ def get_user_byID(id, **kwargs):
         return create_error_response("User does not exist", 404)
 
 
-@users_blueprint.route("/users", methods=["GET"])
+@users_blueprint.route("/", methods=["GET"])
 @Database.with_connection
 def get_all_users(**kwargs):
     cursor = kwargs["cursor"]
