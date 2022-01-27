@@ -3,6 +3,7 @@ import os
 from flask import Blueprint, jsonify, current_app, request
 from util.database import Database
 from util.response import create_error_response, convert_javascript_date
+from util.request import require_roles
 
 inventory_blueprint = Blueprint("inventory", __name__)
 VALID_IMAGE_EXTENSIONS = {"jpg", "png", "jpeg"}
@@ -65,6 +66,7 @@ def get_all(**kwargs):
 
 
 @inventory_blueprint.route("/<int:item_id>", methods=["DELETE"])
+@require_roles(["admin", "super"])
 @Database.with_connection
 def delete_item(item_id, **kwargs):
     cursor = kwargs["cursor"]
@@ -297,6 +299,7 @@ def get_item_by_barcode(barcode, **kwargs):
 
 
 @inventory_blueprint.route("/<int:item_id>/uploadImage", methods=["POST"])
+@require_roles(["admin", "super"])
 @Database.with_connection
 def upload_images(item_id, **kwargs):
     cursor = kwargs["cursor"]
@@ -336,6 +339,7 @@ def upload_images(item_id, **kwargs):
 
 
 @inventory_blueprint.route("/add", methods=["POST"])
+@require_roles(["admin", "super"])
 @Database.with_connection
 def add_item(**kwargs):
     cursor = kwargs["cursor"]
@@ -435,6 +439,7 @@ def add_item(**kwargs):
 
 
 @inventory_blueprint.route("/<int:item_id>", methods=["PUT"])
+@require_roles(["admin", "super"])
 @Database.with_connection
 def update_item(item_id, **kwargs):
     cursor = kwargs["cursor"]

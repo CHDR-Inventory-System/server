@@ -13,9 +13,11 @@ app = Flask(
 )
 app.config["IMAGE_FOLDER"] = "./images"
 
-CORS(app)
 app.config["JWT_SECRET_KEY"] = secrets["JWT_SECRET_KEY"]
-jwt = JWTManager(app)
+app.config["JWT_ERROR_MESSAGE_KEY"] = "error"
+
+CORS(app)
+JWTManager(app)
 
 gunicorn_logger = logging.getLogger("gunicorn.error")
 app.logger.handlers = gunicorn_logger.handlers
