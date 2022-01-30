@@ -177,3 +177,35 @@ def get_all_users(**kwargs):
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
+
+
+@users_blueprint.route("/<int:id>/role", method=["PATCH"])
+@Database.with_connection
+def update_user_role(id, **kwargs):
+    cursor = kwargs["cursor"]
+    connection = kwargs["connection"]
+
+    request_data = request.get_json()
+
+    try:
+        role = request_data["role"]
+    except KeyError:
+        return create_error_response("A role is required", 400)
+
+    query = """
+            UPDATE users
+            SET role = '%s'
+            WHERE ID = '%s'
+            """ % (
+        role,
+        id,
+    )
+
+    try:
+        cursor.execute(query)
+        connection.commit()
+    except mysql.connection.Error as err:
+        current_app.logger.exception(str(err))
+        return create_error_response("An unexpected error occurred", 500)
+
+    return jsonify({"status": "Success"})
