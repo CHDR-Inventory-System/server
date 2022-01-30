@@ -32,30 +32,80 @@ def query_reservations(base_query: str, **kwargs):
         # For every reservation, we'll need to replace the item id,
         # user id, and admin id with the actual values in the database
         for reservation in reservations:
-            cursor.execute("SELECT * FROM item WHERE ID = %s" % (reservation["item"],))
+            query = """
+                SELECT
+                    A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+                FROM itemChild AS A
+                LEFT JOIN item AS B on A.item = B.ID
+                WHERE A.item = %(item_id)s
+                UNION
+                SELECT
+                    A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+                FROM itemChild AS A
+                LEFT JOIN item AS B on A.item = B.ID
+                WHERE A.item = %(item_id)s
+            """
+            cursor.execute(query, {"item_id": reservation["item"]})
 
-            reservation["item"] = cursor.fetchone()
-            reservation["item"]["moveable"] = bool(reservation["item"]["moveable"])
-            reservation["item"]["available"] = bool(reservation["item"]["available"])
+            # Replace the reservation's item field with the actual item data
+            # from the database
+            items = cursor.fetchall()
 
+            for item in items:
+                item["moveable"] = bool(item["moveable"])
+                item["available"] = bool(item["available"])
+                item["main"] = bool(item["main"])
+
+                cursor.execute(
+                    "SELECT * from itemImage WHERE itemChild = %s" % (item["ID"])
+                )
+
+                item["images"] = cursor.fetchall()
+
+            main_item = next((item for item in items if bool(item["main"])), None)
+            main_item["children"] = [item for item in items if not bool(item["main"])]
+
+            reservation["item"] = main_item
+
+            # Replace the reservation's user field with the actual user data
+            # from the database
             cursor.execute(
-                "SELECT email, ID, role FROM users WHERE ID = %s"
+                """
+                SELECT ID, nid, email, verified, role, created, fullName
+                FROM users
+                WHERE ID = %s
+                LIMIT 1
+                """
                 % (reservation["user"],)
             )
 
-            reservation["user"] = cursor.fetchone()
+            user = cursor.fetchone()
+            user["verified"] = bool(user["verified"])
 
+            reservation["user"] = user
+
+            # Replace the reservation's user field with the actual user data from the
+            # database (if there is an admin who has updated this reservation's status)
             if reservation["userAdminID"] is not None:
                 cursor.execute(
                     """
-                    SELECT email, ID, role FROM users
+                    SELECT ID, nid, email, verified, role, created, fullName
+                    FROM users
                     WHERE ID = %s AND (role = 'Admin' OR role = 'Super')
+                    LIMIT 1
                     """
                     % (reservation["userAdminID"],),
                 )
-                reservation["admin"] = cursor.fetchone()
+                admin = cursor.fetchone()
+                admin["verified"] = bool(admin["verified"])
+
+                reservation["admin"] = admin
             else:
                 reservation["admin"] = None
+
+            # Since this filed can be accesse through the nested admin object,
+            # we no longer need this property
+            del reservation["userAdminID"]
 
         return jsonify(reservations)
     except mysql.connector.Error as err:
