@@ -1,7 +1,9 @@
 import mysql.connector
 from util.database import Database
 from flask import Blueprint, current_app, jsonify, request
+from flask_jwt_extended import jwt_required, get_jwt_identity
 from util.response import create_error_response, convert_javascript_date
+from util.request import require_roles
 
 reservation_blueprint = Blueprint("reservation", __name__)
 
@@ -64,6 +66,7 @@ def query_reservations(base_query: str, **kwargs):
 
 
 @reservation_blueprint.route("/", methods=["GET"])
+@require_roles(["admin", "super"])
 @Database.with_connection
 def get_all_reservations(**kwargs):
     status = request.args.get("status", default="", type=str)
@@ -77,18 +80,29 @@ def get_all_reservations(**kwargs):
 
 
 @reservation_blueprint.route("/user/<int:user_id>", methods=["GET"])
+@jwt_required()
 @Database.with_connection
 def get_reservations_by_user(user_id, **kwargs):
+    user = get_jwt_identity()
+
+    # Prevent users from looking at reservations that aren't their own
+    if user["role"].lower() == "user" and user["ID"] != user_id:
+        return create_error_response(
+            "You don't have permission to view this resource", 403
+        )
+
     return query_reservations("SELECT * FROM reservation WHERE user = %s" % (user_id,))
 
 
 @reservation_blueprint.route("/item/<int:item_id>", methods=["GET"])
+@require_roles(["admin", "super"])
 @Database.with_connection
 def get_reservations_by_item(item_id, **kwargs):
     return query_reservations("SELECT * FROM reservation WHERE item = %s" % (item_id,))
 
 
 @reservation_blueprint.route("/<int:reservation_id>", methods=["GET"])
+@require_roles(["admin", "super"])
 @Database.with_connection
 def get_reservations_by_id(reservation_id, **kwargs):
     return query_reservations(
@@ -128,12 +142,13 @@ def create_reservation(**kwargs):
             return create_error_response("Invalid user ID", 400)
 
         query = """
-            INSERT INTO reservation (item, user, startDateTime, endDateTime)
+            INSERT INTO reservation (item, user, startDateTime, endDateTime, status)
             VALUES (
                 %(item)s,
                 %(user)s,
                 %(start_date_time)s,
-                %(end_date_time)s
+                %(end_date_time)s,
+                "Pending"
             )
         """
 
