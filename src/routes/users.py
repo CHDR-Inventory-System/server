@@ -179,9 +179,9 @@ def get_all_users(**kwargs):
         return create_error_response("An unexpected error occurred", 500)
 
 
-@users_blueprint.route("/<int:id>/email", methods=["PATCH"])
+@users_blueprint.route("/<int:user_id>/email", methods=["PATCH"])
 @Database.with_connection
-def update_user_email(id, **kwargs):
+def update_user_email(user_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
 
@@ -200,7 +200,7 @@ def update_user_email(id, **kwargs):
             WHERE ID = %s
             """ % (
         email,
-        id,
+        user_id,
     )
 
     try:
