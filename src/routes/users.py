@@ -191,11 +191,9 @@ def update_user_role(id, **kwargs):
         userRole = request_data["role"]
     except KeyError:
         return create_error_response("A role is required", 400)
-    # TODO check request_data["role"] has value
     except TypeError:
         return create_error_response("A role is required", 400)
 
-    # TODO ensure request_data["role"] value is valid {User, Admin, Super}
     if (
         userRole.lower() != "user"
         and userRole.lower() != "admin"
