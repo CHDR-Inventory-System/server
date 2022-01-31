@@ -178,6 +178,7 @@ def get_all_users(**kwargs):
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
 
+
 @users_blueprint.route("/<int:user_id>/role", methods=["PATCH"])
 @Database.with_connection
 def update_user_role(user_id, **kwargs):
