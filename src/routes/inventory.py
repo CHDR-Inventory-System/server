@@ -50,12 +50,12 @@ def get_all(**kwargs):
             row["moveable"] = bool(row["moveable"])
             row["main"] = bool(row["main"])
 
-            response.append(row)
-
         for row in main_items:
             row["children"] = [
                 child for child in child_items if child["item"] == row["item"]
             ]
+
+            response.append(row)
 
         return jsonify(response)
 
