@@ -177,3 +177,32 @@ def get_all_users(**kwargs):
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
+
+
+@users_blueprint.route("/<int:id>/email", methods=["PATCH"])
+@Database.with_connection
+def update_user_email(id, **kwargs):
+    cursor = kwargs["cursor"]
+    connection = kwargs["connection"]
+
+    request_data = request.get_json()
+
+    # TODO change email verified to false
+    # TODO check request_data["email"] has value
+
+    try:
+        email = request_data["email"]
+    except KeyError:
+        return create_error_response("An email is required", 400)
+
+    # sql query to update email of user (given by id)
+    query = "UPDATE users SET email = '%s' WHERE ID = '%s'" % (email, id)
+
+    try:
+        cursor.execute(query)
+        connection.commit()
+    except mysql.connection.Error as err:
+        current_app.logger.exception(str(err))
+        return create_error_response("An unexpected error occurred", 500)
+
+    return jsonify({"status": "Success"})
