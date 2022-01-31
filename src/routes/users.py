@@ -165,7 +165,7 @@ def get_all_users(**kwargs):
     cursor = kwargs["cursor"]
 
     # sql query to return all users in database with id, nid, email, created, and role
-    query = "SELECT ID, nid, email, role, created FROM users"
+    query = "SELECT ID, nid, email, role, created, verified FROM users"
     try:
         cursor.execute(query)
         # ? fetchall() returns a list of dictionaries where
@@ -187,20 +187,25 @@ def update_user_email(id, **kwargs):
 
     request_data = request.get_json()
 
-    # TODO change email verified to false
-    # TODO check request_data["email"] has value
-
     try:
         email = request_data["email"]
     except KeyError:
         return create_error_response("An email is required", 400)
+    except TypeError:
+        return create_error_response("An email is requried", 400)
 
     # sql query to update email of user (given by id)
-    query = "UPDATE users SET email = '%s' WHERE ID = '%s'" % (email, id)
+    # TODO change email verified to false
+    query = "UPDATE users SET email = '%s', verified = '0' WHERE ID = '%s'" % (
+        email,
+        id,
+    )
 
     try:
         cursor.execute(query)
         connection.commit()
+
+    # ! Line below throwing AttributeError: module 'mysql' has no attribute 'connection'
     except mysql.connection.Error as err:
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
