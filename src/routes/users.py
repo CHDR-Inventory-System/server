@@ -179,29 +179,29 @@ def get_all_users(**kwargs):
         return create_error_response("An unexpected error occurred", 500)
 
 
-@users_blueprint.route("/<int:id>/role", methods=["PATCH"])
+@users_blueprint.route("/<int:user_id>/role", methods=["PATCH"])
 @Database.with_connection
-def update_user_role(id, **kwargs):
+def update_user_role(user_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
 
     request_data = request.get_json()
 
     try:
-        userRole = request_data["role"]
+        user_role = request_data["role"]
     except KeyError:
         return create_error_response("A role is required", 400)
     except TypeError:
         return create_error_response("A role is required", 400)
 
     if (
-        userRole.lower() != "user"
-        and userRole.lower() != "admin"
-        and userRole.lower() != "super"
+        user_role.lower() != "user"
+        and user_role.lower() != "admin"
+        and user_role.lower() != "super"
     ):
         return create_error_response("Role is invalid", 406)
 
-    query = "UPDATE users SET role = '%s' WHERE ID = '%s'" % (userRole, id)
+    query = "UPDATE users SET role = '%s' WHERE ID = '%s'" % (user_role, user_id)
 
     try:
         cursor.execute(query)
