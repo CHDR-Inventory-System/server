@@ -165,7 +165,7 @@ def get_all_users(**kwargs):
     cursor = kwargs["cursor"]
 
     # sql query to return all users in database with id, nid, email, created, and role
-    query = "SELECT ID, nid, email, role, created FROM users"
+    query = "SELECT ID, nid, email, role, created, verified FROM users"
     try:
         cursor.execute(query)
         # ? fetchall() returns a list of dictionaries where
@@ -202,6 +202,40 @@ def update_user_role(user_id, **kwargs):
         return create_error_response("Role is invalid", 406)
 
     query = "UPDATE users SET role = '%s' WHERE ID = '%s'" % (user_role, user_id)
+
+    try:
+        cursor.execute(query)
+        connection.commit()
+    except mysql.connection.Error as err:
+        current_app.logger.exception(str(err))
+        return create_error_response("An unexpected error occurred", 500)
+
+    return jsonify({"status": "Success"})
+
+
+@users_blueprint.route("/<int:user_id>/email", methods=["PATCH"])
+@Database.with_connection
+def update_user_email(user_id, **kwargs):
+    cursor = kwargs["cursor"]
+    connection = kwargs["connection"]
+
+    request_data = request.get_json()
+
+    try:
+        email = request_data["email"]
+    except KeyError:
+        return create_error_response("An email is required", 400)
+    except TypeError:
+        return create_error_response("An email is requried", 400)
+
+    query = """
+            UPDATE users
+            SET email = '%s', verified = 0
+            WHERE ID = %s
+            """ % (
+        email,
+        user_id,
+    )
 
     try:
         cursor.execute(query)
