@@ -194,9 +194,11 @@ def update_user_email(id, **kwargs):
     except TypeError:
         return create_error_response("An email is requried", 400)
 
-    # sql query to update email of user (given by id)
-    # TODO change email verified to false
-    query = "UPDATE users SET email = '%s', verified = '0' WHERE ID = '%s'" % (
+    query = """
+            UPDATE users
+            SET email = '%s', verified = 0
+            WHERE ID = %s
+            """ % (
         email,
         id,
     )
@@ -204,8 +206,6 @@ def update_user_email(id, **kwargs):
     try:
         cursor.execute(query)
         connection.commit()
-
-    # ! Line below throwing AttributeError: module 'mysql' has no attribute 'connection'
     except mysql.connection.Error as err:
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
