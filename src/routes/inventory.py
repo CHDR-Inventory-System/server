@@ -49,13 +49,16 @@ def get_all(**kwargs):
             row["available"] = bool(row["available"])
             row["moveable"] = bool(row["moveable"])
             row["main"] = bool(row["main"])
-
+            # Child rows won't have children but we'll add the property
+            # the property anyway to keep the API response consistent
+            row["children"] = []
             response.append(row)
 
         for row in main_items:
             row["children"] = [
                 child for child in child_items if child["item"] == row["item"]
             ]
+            response.append(row)
 
         return jsonify(response)
 
@@ -139,8 +142,8 @@ def get_item_by_id(item_id, **kwargs):
         result["available"] = bool(result["available"])
         result["main"] = bool(result["main"])
         result["images"] = images
+        result["children"] = []
 
-        # If this is the main item, we also need to fetch its children
         if result["main"]:
             query = """
                 SELECT
@@ -282,6 +285,7 @@ def get_item_by_barcode(barcode, **kwargs):
                 "SELECT * FROM itemImage WHERE itemChild = %s" % (row["ID"],)
             )
             row["images"] = cursor.fetchall()
+            row["children"] = []
             row["available"] = bool(row["available"])
             row["moveable"] = bool(row["moveable"])
             row["main"] = bool(row["main"])
