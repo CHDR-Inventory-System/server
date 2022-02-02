@@ -140,7 +140,18 @@ def login(**kwargs):
                     my_token = create_access_token(
                         identity={"ID": exist_acc["ID"], "role": exist_acc["role"]}
                     )
-                    return jsonify({"token": my_token})
+                    return jsonify(
+                        {
+                            "ID": exist_acc["ID"],
+                            "created": exist_acc["created"],
+                            "email": exist_acc["email"],
+                            "role": exist_acc["role"],
+                            "nid": exist_acc["nid"],
+                            "verified": bool(exist_acc["verified"]),
+                            "fullName": exist_acc["fullName"],
+                            "token": my_token,
+                        }
+                    )
 
             except LDAPBindError:
                 return create_error_response("Invalid credentials", 401)
@@ -211,9 +222,11 @@ def get_user_byID(id, **kwargs):
         full_name = exist_acc["fullName"]
         role = exist_acc["role"]
         userID = exist_acc["ID"]
+        verified = exist_acc["verified"]
 
-        if not exist_acc:
-            return create_error_response("User does not exist", 404)
+        if exist_acc is not None:
+            if not exist_acc:
+                return create_error_response("User does not exist", 404)
 
         return jsonify(
             {
@@ -222,6 +235,7 @@ def get_user_byID(id, **kwargs):
                 "email": email,
                 "role": role,
                 "nid": nid,
+                "verified": bool(verified),
                 "fullName": full_name,
             }
         )
@@ -236,7 +250,7 @@ def get_all_users(**kwargs):
     cursor = kwargs["cursor"]
 
     # sql query to return all users in database with id, nid, email, created, and role
-    query = "SELECT ID, fullName, nid, email, role, created FROM users"
+    query = "SELECT ID, fullName, nid, email, role,verified, created FROM users"
     try:
         cursor.execute(query)
         # ? fetchall() returns a list of dictionaries where
