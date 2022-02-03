@@ -48,66 +48,67 @@ def register(**kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
 
-    try:
-        # Takes incoming data as json
-        incoming_data = request.get_json()
+    # Takes incoming data as json
+    incoming_data = request.get_json()
 
+    if not incoming_data:
+        return create_error_response("A body is required", 400)
+
+    try:
         nid = incoming_data["nid"]
         password = incoming_data["password"]
         email = incoming_data["email"]
-        # set role and verified automatically to user and Admin and Super admnin or 0 to verified
+    except KeyError as err:
+        return create_error_response(f"Parameter {err.args[0]} is required", 400)
+
+    if not re.match(r"[^@]+@[^@]+\.[^@]+", email):
+        return create_error_response("Invalid email address!", 400)
+
+    try:
+        ucf_creds = ldap_auth(nid, password)
+
+        first_name = ucf_creds["entries"][0]["attributes"]["givenName"]
+        last_name = ucf_creds["entries"][0]["attributes"]["sn"]
+        full_name = f"{first_name} {last_name}"
+
+        # Check to see if account exist already or not
+        cursor.execute(
+            "SELECT ID FROM users WHERE email = %s OR nid = %s LIMIT 1", (email, nid)
+        )
+        exist_acc = cursor.fetchone()
+
+        if exist_acc:
+            return create_error_response(
+                "An account with this email or nid already exists", 409
+            )
+
+        # Set role and verified automatically to user and unverified
         verified = 0
         role = "User"
 
-        # If variables were inserted then proceed
-        if nid and password and email:
+        query = """
+        INSERT INTO users(nid, email, verified, role, fullName)
+        VALUES(%s, %s, %s, %s, %s)
+        """
+        data = (
+            nid,
+            email,
+            verified,
+            role,
+            full_name,
+        )
 
-            try:
-                ucf_creds = ldap_auth(nid, password)
+        cursor.execute(query, data)
+        connection.commit()
 
-                first_name = ucf_creds["entries"][0]["attributes"]["givenName"]
-                last_name = ucf_creds["entries"][0]["attributes"]["sn"]
-                full_name = f"{first_name} {last_name}"
+        return jsonify({"status": "New account created"})
 
-                # sql query to check if Email exists already
-                cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
-                exist_acc = cursor.fetchone()
-
-                # Check to see if account exist already or not
-                if exist_acc:
-                    return create_error_response("Account already exists!", 409)
-                elif not re.match(r"[^@]+@[^@]+\.[^@]+", email):
-                    return create_error_response("Invalid email address!", 409)
-                else:
-                    sql_Query2 = """
-                  INSERT INTO users(nid, email, verified, role, fullName)
-                  VALUES(%s, %s, %s, %s, %s)
-                """
-                    data = (
-                        nid,
-                        email,
-                        verified,
-                        role,
-                        full_name,
-                    )
-                cursor.execute(sql_Query2, data)
-                connection.commit()
-
-                return jsonify({"message": "New account created"})
-
-            except LDAPBindError:
-                return create_error_response("Invalid credentials", 401)
-            except LookupError as err:
-                print(err)
-                current_app.logger.exception(str(err))
-                return create_error_response(str(err), 500)
-            except ConnectionError as err:
-                current_app.logger.exception(str(err))
-                return create_error_response(str(err), 503)
-        else:
-            return create_error_response("Please enter the required fields!", 409)
-
-    except Exception as err:
+    except LDAPBindError:
+        return create_error_response("Invalid credentials", 401)
+    except ConnectionError as err:
+        current_app.logger.exception(str(err))
+        return create_error_response(str(err), 503)
+    except (Exception, LookupError) as err:
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
 
@@ -115,88 +116,105 @@ def register(**kwargs):
 @users_blueprint.route("/login", methods=["POST"])
 @Database.with_connection
 def login(**kwargs):
+    cursor = kwargs["cursor"]
+
+    # Takes incoming data as json
+    incoming_data = request.get_json()
+
+    if not incoming_data:
+        return create_error_response("A body is required", 400)
+
     try:
-        cursor = kwargs["cursor"]
-
-        # Takes incoming data as json
-        incoming_data = request.get_json()
-
         nid = incoming_data["nid"]
         password = incoming_data["password"]
+    except KeyError as err:
+        return create_error_response(f"Parameter {err.args[0]} is required", 400)
 
-        # If variables were inserted then proceed
-        if nid and password:
-            try:
-                ucf_creds = ldap_auth(nid, password)
-                ucf_creds_nid = ucf_creds["entries"][0]["attributes"]["cn"]
+    # If variables were inserted then proceed
+    try:
+        ucf_creds = ldap_auth(nid, password)
+        ucf_creds_nid = ucf_creds["entries"][0]["attributes"]["cn"]
 
-                if ucf_creds_nid != nid:
-                    return create_error_response("Invalid credentials", 401)
-                # sql query to check if nid exists already
-                cursor.execute("SELECT * FROM users WHERE nid = %s", (ucf_creds_nid,))
-                exist_acc = cursor.fetchone()
+        if ucf_creds_nid != nid:
+            return create_error_response("Invalid credentials", 401)
 
-                if exist_acc:
-                    my_token = create_access_token(
-                        identity={"ID": exist_acc["ID"], "role": exist_acc["role"]}
-                    )
-                    return jsonify(
-                        {
-                            "ID": exist_acc["ID"],
-                            "created": exist_acc["created"],
-                            "email": exist_acc["email"],
-                            "role": exist_acc["role"],
-                            "nid": exist_acc["nid"],
-                            "verified": bool(exist_acc["verified"]),
-                            "fullName": exist_acc["fullName"],
-                            "token": my_token,
-                        }
-                    )
+        # sql query to check if nid exists already
+        cursor.execute("SELECT * FROM users WHERE nid = %s", (ucf_creds_nid,))
+        user = cursor.fetchone()
 
-            except LDAPBindError:
-                return create_error_response("Invalid credentials", 401)
-            except LookupError as err:
-                print(err)
-                current_app.logger.exception(str(err))
-                return create_error_response(str(err), 500)
-            except ConnectionError as err:
-                current_app.logger.exception(str(err))
-                return create_error_response(str(err), 503)
+        if not user:
+            return create_error_response("Invalid credentials", 401)
 
-        else:
-            return create_error_response("Please enter all required fields!", 409)
-    except Exception as err:
+        token = create_access_token(identity={"ID": user["ID"], "role": user["role"]})
+
+        return jsonify(
+            {
+                "ID": user["ID"],
+                "created": user["created"],
+                "email": user["email"],
+                "role": user["role"],
+                "nid": user["nid"],
+                "verified": bool(user["verified"]),
+                "fullName": user["fullName"],
+                "token": token,
+            }
+        )
+
+    except LDAPBindError:
+        return create_error_response("Invalid credentials", 401)
+    except ConnectionError as err:
+        current_app.logger.exception(str(err))
+        return create_error_response(str(err), 503)
+    except (Exception, LookupError) as err:
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
 
 
-@users_blueprint.route("/<int:id>", methods=["DELETE"])
+@users_blueprint.route("/<int:user_id>", methods=["DELETE"])
 @Database.with_connection
-def delete(id, **kwargs):
+def delete(user_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
+
+    incoming_data = request.get_json()
+
+    if not incoming_data:
+        return create_error_response("A body is required", 400)
+
     try:
-        my_id = id
+        nid = incoming_data["nid"]
+        password = incoming_data["password"]
+    except KeyError as err:
+        return create_error_response(f"Parameter {err.args[0]} is required", 400)
+
+    try:
+        # Fetch this user from the ldap server to verify their credentials
+        ldap_auth(nid, password)
+    except LDAPBindError:
+        return create_error_response("Invalid credentials", 401)
+    except ConnectionError as err:
+        current_app.logger.exception(str(err))
+        return create_error_response(str(err), 503)
+    except (Exception, LookupError) as err:
+        current_app.logger.exception(str(err))
+        return create_error_response("An unexpected error occurred", 500)
+
+    try:
         # checks to see if user exist or not
-        sqlQuery_1 = "SELECT * FROM users WHERE ID = %s"
-        cursor.execute(sqlQuery_1, (my_id,))
+        query = "SELECT nid FROM users WHERE nid = %s"
+        cursor.execute(query, (nid,))
         exist_acc = cursor.fetchone()
 
         if not exist_acc:
-            return create_error_response("User does not exist", 404)
+            return create_error_response("Invalid credentials", 401)
 
         # sql query to delete user if it exists already
-        sqlQuery_2 = "DELETE FROM users WHERE ID=%s"
+        query = "DELETE FROM users WHERE nid = %s"
 
-        try:
-            cursor.execute("DELETE FROM reservation WHERE user = %s" % (my_id,))
-            cursor.execute(sqlQuery_2 % (my_id,))
+        cursor.execute("DELETE FROM reservation WHERE user = %s" % (nid,))
+        cursor.execute(query % (user_id,))
 
-            connection.commit()
-        except Exception as err:
-            print(err)
-            connection.rollback()
-            return create_error_response("Error", 400)
+        connection.commit()
 
         return jsonify({"status": "Success"})
     except Exception as err:
@@ -205,40 +223,27 @@ def delete(id, **kwargs):
         return create_error_response("An unexpected error occurred", 500)
 
 
-@users_blueprint.route("/<int:id>", methods=["GET"])
+@users_blueprint.route("/<int:user_id>", methods=["GET"])
 @Database.with_connection
-def get_user_byID(id, **kwargs):
+def get_user_by_ID(user_id, **kwargs):
     cursor = kwargs["cursor"]
+
     try:
-        my_id = id
-
         # sql query to check if user exists already
-        sqlQuery_1 = "SELECT * FROM users WHERE ID=%s"
-        cursor.execute(sqlQuery_1, (my_id,))
-        exist_acc = cursor.fetchone()
-        created = exist_acc["created"]
-        nid = exist_acc["nid"]
-        email = exist_acc["email"]
-        full_name = exist_acc["fullName"]
-        role = exist_acc["role"]
-        userID = exist_acc["ID"]
-        verified = exist_acc["verified"]
+        query = """
+            SELECT ID, nid, email, verified, role, created, fullName
+            FROM users WHERE ID = %s
+        """
 
-        if exist_acc is not None:
-            if not exist_acc:
-                return create_error_response("User does not exist", 404)
+        cursor.execute(query, (user_id,))
+        user = cursor.fetchone()
 
-        return jsonify(
-            {
-                "ID": userID,
-                "created": created,
-                "email": email,
-                "role": role,
-                "nid": nid,
-                "verified": bool(verified),
-                "fullName": full_name,
-            }
-        )
+        if not user:
+            return create_error_response("User does not exist", 404)
+
+        user["verified"] = bool(user["verified"])
+
+        return jsonify(user)
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
@@ -250,12 +255,16 @@ def get_all_users(**kwargs):
     cursor = kwargs["cursor"]
 
     # sql query to return all users in database with id, nid, email, created, and role
-    query = "SELECT ID, fullName, nid, email, role,verified, created FROM users"
+    query = "SELECT ID, nid, email, verified, role, created, fullName FROM users"
+
     try:
         cursor.execute(query)
         # ? fetchall() returns a list of dictionaries where
         # ? the keys are the column-names in the database
         users = cursor.fetchall()
+
+        for user in users:
+            user["verified"] = bool(user["verified"])
 
         return jsonify(users)
 
