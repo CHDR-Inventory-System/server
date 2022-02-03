@@ -1,21 +1,19 @@
 import sys
 from routes.users import users_blueprint
-import logging
 from routes.reservation import reservation_blueprint
 from routes.inventory import inventory_blueprint
+import logging
 from flask import Flask, render_template
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from util.config import secrets
 
-app = Flask(
-    __name__, template_folder="../build", static_folder="../build", static_url_path=""
-)
+app = Flask(__name__)
 app.config["IMAGE_FOLDER"] = "./images"
+app.config["JWT_SECRET_KEY"] = secrets["JWT_SECRET_KEY"]
 
 CORS(app)
-app.config["JWT_SECRET_KEY"] = secrets["JWT_SECRET_KEY"]
-jwt = JWTManager(app)
+JWTManager(app)
 
 gunicorn_logger = logging.getLogger("gunicorn.error")
 app.logger.handlers = gunicorn_logger.handlers

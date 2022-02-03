@@ -9,6 +9,9 @@ secrets = {
     "DB_USERNAME": os.getenv("DB_USERNAME"),
     "DB_PASSWORD": os.getenv("DB_PASSWORD"),
     "DB_DATABASE": os.getenv("DB_DATABASE"),
+    "LDAP_SERVER": os.getenv("LDAP_SERVER"),
+    "BASE_DN": os.getenv("BASE_DN"),
+    "DOMAIN": os.getenv("DOMAIN"),
 }
 
 

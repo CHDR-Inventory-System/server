@@ -39,6 +39,7 @@ def get_all(**kwargs):
         child_items = [item for item in all_items if not bool(item["main"])]
         response = []
 
+        # Add all images to each item
         for row in main_items + child_items:
             row["images"] = [
                 image for image in images if image["itemChild"] == row["ID"]
@@ -50,11 +51,11 @@ def get_all(**kwargs):
             row["moveable"] = bool(row["moveable"])
             row["main"] = bool(row["main"])
 
+        # Add the child to the main items if the main item has children
         for row in main_items:
             row["children"] = [
                 child for child in child_items if child["item"] == row["item"]
             ]
-
             response.append(row)
 
         return jsonify(response)
@@ -139,8 +140,8 @@ def get_item_by_id(item_id, **kwargs):
         result["available"] = bool(result["available"])
         result["main"] = bool(result["main"])
         result["images"] = images
+        result["children"] = []
 
-        # If this is the main item, we also need to fetch its children
         if result["main"]:
             query = """
                 SELECT
@@ -282,6 +283,7 @@ def get_item_by_barcode(barcode, **kwargs):
                 "SELECT * FROM itemImage WHERE itemChild = %s" % (row["ID"],)
             )
             row["images"] = cursor.fetchall()
+            row["children"] = []
             row["available"] = bool(row["available"])
             row["moveable"] = bool(row["moveable"])
             row["main"] = bool(row["main"])
@@ -301,6 +303,7 @@ def get_item_by_barcode(barcode, **kwargs):
 def upload_images(item_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
+
     images = request.files.getlist("image")
 
     for image in images:
@@ -359,7 +362,7 @@ def add_item(**kwargs):
     try:
         item_child_values["name"] = post_data["name"]
         item_child_values["type"] = post_data["type"]
-        item_child_values["serial"] = post_data["serial"]
+        item_child_values["main"] = int(post_data["main"])
 
         # Using 'get' for these parameters so that they can default
         # to None (NULL in mysql's case) when inserted without a value
@@ -367,7 +370,7 @@ def add_item(**kwargs):
         item_child_values["vendor_name"] = post_data.get("vendorName")
         item_child_values["purchase_date"] = post_data.get("purchaseDate")
         item_child_values["vendor_price"] = post_data.get("vendorPrice")
-        item_child_values["main"] = int(post_data.get("main", True))
+        item_child_values["serial"] = post_data.get("serial")
 
         # Only convert these values if they exists. Otherwise, we'll want them
         # to be null in the database
