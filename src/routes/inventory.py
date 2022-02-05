@@ -1,8 +1,12 @@
 import mysql.connector
 import os
+from io import BytesIO
 from flask import Blueprint, jsonify, current_app, request
 from util.database import Database
 from util.response import create_error_response, convert_javascript_date
+from werkzeug.utils import secure_filename
+from werkzeug.datastructures import FileStorage
+import base64
 
 inventory_blueprint = Blueprint("inventory", __name__)
 VALID_IMAGE_EXTENSIONS = {"jpg", "png", "jpeg"}
@@ -24,12 +28,14 @@ def get_all(**kwargs):
         cursor.execute(
             """
             SELECT
-                A.barcode, A.available, A.moveable, A.location, A.quantity, B.*
+                A.barcode, A.available, A.moveable, A.location, A.quantity,
+                A.retiredDateTime, B.*
             FROM item AS A
             LEFT JOIN itemChild AS B on B.item = A.ID
             UNION
             SELECT
-                A.barcode, A.available, A.moveable, A.location, A.quantity, B.*
+                A.barcode, A.available, A.moveable, A.location, A.quantity,
+                A.retiredDateTime, B.*
             FROM item AS A
             RIGHT JOIN itemChild B on B.item = A.ID
             """
@@ -71,32 +77,47 @@ def delete_item(item_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
 
-    # Before we delete the item, we first need to delete the
-    # image files from the server. If this fails, we can still
-    # delete from the database
+    # Before we delete the item, we first need to delete the image files from the
+    # server (including child images if the item we're deleting is a parent item).
+    # If this step fails for some reason, we can still try to delete the item
+    # from the database
     try:
-        cursor.execute(
-            "SELECT imagePath FROM itemImage WHERE itemChild = %s" % (item_id,)
-        )
+        cursor.execute("SELECT item, main FROM itemChild WHERE ID = %s" % (item_id,))
 
-        for image in cursor.fetchall():
-            image_path = image["imagePath"]
+        item = cursor.fetchone()
 
-            if os.path.exists(image_path):
-                os.remove(image_path)
-            else:
-                current_app.logger.warn(
-                    f"{image_path} does not exist, skipping deletion..."
-                )
+        if item["main"]:
+            cursor.execute("SELECT ID FROM itemChild WHERE item = %s" % (item["item"],))
+            all_item_ids = [str(row["ID"]) for row in cursor.fetchall()]
+
+            cursor.execute(
+                "SELECT imagePath from itemImage WHERE itemChild IN (%s)"
+                % ",".join(all_item_ids)
+            )
+
+            image_paths = [row["imagePath"] for row in cursor.fetchall()]
+
+            for image_path in image_paths:
+                try:
+                    os.remove(image_path)
+                except (IsADirectoryError, FileNotFoundError) as err:
+                    current_app.logger.exception(str(err))
 
     except Exception as err:
         current_app.logger.exception(str(err))
 
     try:
-        cursor.execute("DELETE FROM reservation WHERE item = %s" % (item_id,))
-        cursor.execute("DELETE FROM itemImage WHERE itemChild = %s" % (item_id,))
-        cursor.execute("DELETE FROM itemChild WHERE item = %s" % (item_id,))
-        cursor.execute("DELETE FROM item WHERE ID = %s" % (item_id,))
+        cursor.execute("SELECT item, main FROM itemChild WHERE ID = %s" % (item_id,))
+
+        item = cursor.fetchone()
+
+        # If this is the main item, we also need to delete its associated children
+        if item["main"]:
+            cursor.execute(
+                "DELETE FROM itemChild WHERE item = %s AND main = 0" % (item["item"])
+            )
+
+        cursor.execute("DELETE FROM itemChild WHERE ID = %s" % (item_id,))
 
         connection.commit()
     except mysql.connector.Error as err:
@@ -300,40 +321,92 @@ def get_item_by_barcode(barcode, **kwargs):
 
 @inventory_blueprint.route("/<int:item_id>/uploadImage", methods=["POST"])
 @Database.with_connection
-def upload_images(item_id, **kwargs):
+def upload_image(item_id, **kwargs):
+    """
+    This route can receive either a JavaScript FormData object with the key
+    'image' or a JSON object with the name of the image and the image data
+    encoded as a base64 string
+    """
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
+    post_data = request.get_json() or {}
 
-    images = request.files.getlist("image")
+    try:
+        # Check to see if we received a FormData object
+        image = request.files["image"]
+    except KeyError:
+        # We didn't get a FormData object so encode the base64 image as a
+        # byte stream and save it
+        filename = post_data["filename"]
+        content_type = "image/png" if filename.endswith("png") else "image/jpeg"
+        file_data = BytesIO(base64.b64decode(post_data["image"]))
 
-    for image in images:
-        if image.filename.split(".")[-1] not in VALID_IMAGE_EXTENSIONS:
-            extensions = ", ".join(VALID_IMAGE_EXTENSIONS)
-            return create_error_response(f"Extension must be one of {extensions}", 400)
+        image = FileStorage(
+            stream=file_data,
+            filename=filename,
+            content_type=content_type,
+        )
+    except KeyError as err:
+        return create_error_response(f"Parameter {err.args[0]} is required", 400)
+    except Exception:
+        return create_error_response("An unexpected error occurred", 500)
+
+    # Make sure we only received images with valid extensions
+    if image.filename.split(".")[-1] not in VALID_IMAGE_EXTENSIONS:
+        extensions = ", ".join(VALID_IMAGE_EXTENSIONS)
+        return create_error_response(f"Extension must be one of {extensions}", 400)
 
     try:
         os.makedirs("images", exist_ok=True)
 
-        for image in images:
-            image_path = os.path.join(
-                current_app.config["IMAGE_FOLDER"], image.filename
-            )
-            image.save(image_path)
+        filename = secure_filename(image.filename)
 
-            query = """
-                INSERT INTO itemImage (itemChild, imagePath)
-                VALUES ("%s", "%s")
-            """
+        image_path = os.path.join(current_app.config["IMAGE_FOLDER"], filename)
 
-            cursor.execute(query % (item_id, image_path))
+        query = """
+            INSERT INTO itemImage (itemChild, imagePath)
+            VALUES ("%s", "%s")
+        """
+        cursor.execute(query % (item_id, image_path))
+
+        image.save(image_path)
 
         connection.commit()
+
+        return jsonify({"imageID": cursor.lastrowid})
     except Exception as err:
         current_app.logger.exception(str(err))
         connection.rollback()
         return create_error_response(
             "An unexpected error occurred uploading image", 500
         )
+
+
+@inventory_blueprint.route("/image/<int:image_id>", methods=["DELETE"])
+@Database.with_connection
+def delete_image(image_id, **kwargs):
+    cursor = kwargs["cursor"]
+    connection = kwargs["connection"]
+
+    try:
+        cursor.execute("SELECT imagePath FROM itemImage WHERE ID = %s" % (image_id,))
+
+        file = cursor.fetchone()
+
+        if not file:
+            return create_error_response("Image not found", 404)
+
+        cursor.execute("DELETE FROM itemImage WHERE ID = %s" % (image_id,))
+        connection.commit()
+    except mysql.connector.errors.Error as err:
+        connection.rollback()
+        current_app.logger.exception(str(err))
+        return create_error_response("An unexpected error occurred", 500)
+
+    try:
+        os.remove(file["imagePath"])
+    except (IsADirectoryError, FileNotFoundError) as err:
+        current_app.logger.exception(str(err))
 
     return jsonify({"status": "Success"})
 
@@ -348,7 +421,8 @@ def add_item(**kwargs):
     item_values = {}
 
     try:
-        # These values are required so we need to check for any key errors
+        # These values are required so we need to check for any key errors.
+        # This will be inserted into the item table
         item_values["barcode"] = post_data["barcode"]
         item_values["available"] = int(post_data["available"])
         item_values["moveable"] = int(post_data["moveable"])
@@ -360,9 +434,10 @@ def add_item(**kwargs):
     item_child_values = {}
 
     try:
+        # These values will be inserted into the item child table
         item_child_values["name"] = post_data["name"]
         item_child_values["type"] = post_data["type"]
-        item_child_values["main"] = int(post_data["main"])
+        item_child_values["main"] = True
 
         # Using 'get' for these parameters so that they can default
         # to None (NULL in mysql's case) when inserted without a value
@@ -434,7 +509,68 @@ def add_item(**kwargs):
 
     # The item id is returned here so that the client can easily grab
     # it and use it to upload images immediately afterwards
-    return jsonify({"itemId": item_child_values["item_id"]})
+    return jsonify({"itemID": item_child_values["item_id"]})
+
+
+@inventory_blueprint.route("/<int:item_id>/addChild", methods=["POST"])
+@Database.with_connection
+def add_child_item(item_id, **kwargs):
+    cursor = kwargs["cursor"]
+    connection = kwargs["connection"]
+    post_data = request.get_json()
+    values = {}
+
+    try:
+        values["name"] = post_data["name"]
+        values["type"] = post_data["type"]
+    except KeyError as err:
+        return create_error_response(f"Parameter {err.args[0]} is required", 400)
+
+    values["main"] = False
+    values["item_id"] = item_id
+    values["description"] = post_data.get("description")
+    values["serial"] = post_data.get("serial")
+    values["vendor_name"] = post_data.get("vendorName")
+    values["vendor_price"] = post_data.get("vendorPrice")
+    values["purchase_date"] = post_data.get("purchaseDate")
+
+    if values["purchase_date"]:
+        values["purchase_date"] = convert_javascript_date(values["purchase_date"])
+
+    try:
+        query = """
+            INSERT INTO itemChild (
+                item,
+                name,
+                description,
+                type,
+                serial,
+                vendorName,
+                vendorPrice,
+                purchaseDate,
+                main
+            )
+            VALUES (
+                %(item_id)s,
+                %(name)s,
+                %(description)s,
+                %(type)s,
+                %(serial)s,
+                %(vendor_name)s,
+                %(vendor_price)s,
+                %(purchase_date)s,
+                %(main)s
+            )
+        """
+
+        cursor.execute(query, values)
+        connection.commit()
+
+        return jsonify({"itemID": cursor.lastrowid})
+    except mysql.connector.errors.Error as err:
+        current_app.log_exception(str(err))
+        connection.rollback()
+        return create_error_response("An unexpected error occurred", 500)
 
 
 @inventory_blueprint.route("/<int:item_id>", methods=["PUT"])
@@ -470,31 +606,31 @@ def update_item(item_id, **kwargs):
         # Because some of these values are strings while some are numbers, the string
         # values will need to be surrounded with quotes
         if name is not None:
-            cursor.execute(item_child_query % ("name", f"'{name}'", item_id))
+            cursor.execute(item_child_query % ("name", f'"{name}"', item_id))
 
         if description is not None:
             cursor.execute(
-                item_child_query % ("description", f"'{description}'", item_id)
+                item_child_query % ("description", f'"{description}"', item_id)
             )
 
         if item_type is not None:
-            cursor.execute(item_child_query % ("type", f"'{item_type}'", item_id))
+            cursor.execute(item_child_query % ("type", f'"{item_type}"', item_id))
 
         if serial is not None:
-            cursor.execute(item_child_query % ("serial", f"'{serial}'", item_id))
+            cursor.execute(item_child_query % ("serial", f'"{serial}"', item_id))
 
         if vendor_name is not None:
             cursor.execute(
-                item_child_query % ("vendorName", f"'{vendor_name}'", item_id)
+                item_child_query % ("vendorName", f'"{vendor_name}"', item_id)
             )
 
-        if vendor_price is not None:
+        if vendor_price is not None and vendor_price != "":
             cursor.execute(item_child_query % ("vendorPrice", vendor_price, item_id))
 
         if purchase_date is not None:
             purchase_date = convert_javascript_date(purchase_date)
             cursor.execute(
-                item_child_query % ("purchaseDate", f"'{purchase_date}'", item_id)
+                item_child_query % ("purchaseDate", f'"{purchase_date}"', item_id)
             )
 
         item_query = """
@@ -526,3 +662,43 @@ def update_item(item_id, **kwargs):
         return create_error_response("An unexpected error occurred", 500)
 
     return jsonify({"status": "Success"})
+
+
+@inventory_blueprint.route("/<int:item_id>/retire", methods=["PUT"])
+@Database.with_connection
+def retire_item(item_id, **kwargs):
+    """
+    Handles retiring an item. This route takes "date" as a parameter. If
+    "date" is null then the item's retired status will be removed.
+    """
+    cursor = kwargs["cursor"]
+    connection = kwargs["connection"]
+    post_data = request.get_json() or {}
+
+    try:
+        retired_date = post_data["date"]
+
+        if retired_date is not None:
+            retired_date = convert_javascript_date(retired_date)
+
+    except KeyError:
+        return create_error_response("Parameter date is required", 400)
+
+    try:
+        cursor.execute("SELECT item FROM itemChild WHERE ID = %s" % (item_id,))
+
+        item = cursor.fetchone()
+
+        if not item:
+            return create_error_response("Item not found", 404)
+
+        params = (retired_date, item["item"])
+
+        cursor.execute("UPDATE item SET retiredDateTime = %s WHERE ID = %s", params)
+
+        connection.commit()
+
+        return jsonify({"status": "Success"})
+    except mysql.connector.errors.Error as err:
+        current_app.logger.exception(str(err))
+        return create_error_response("An unexpected error occurred", 500)

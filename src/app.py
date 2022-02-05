@@ -1,4 +1,4 @@
-import sys
+from argparse import ArgumentParser
 from routes.users import users_blueprint
 from routes.reservation import reservation_blueprint
 from routes.inventory import inventory_blueprint
@@ -30,5 +30,12 @@ def index():
 
 
 if __name__ == "__main__":
-    use_debug = "--debug" in sys.argv
-    app.run(port=4565, debug=use_debug)
+    parser = ArgumentParser()
+
+    parser.add_argument("--debug", default=False, action="store_true")
+    parser.add_argument("--port", type=int, default=5000)
+    parser.add_argument("--host", type=str, default="127.0.0.1")
+
+    args = parser.parse_args()
+
+    app.run(port=args.port, debug=args.debug, host=args.host)
