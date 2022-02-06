@@ -17,7 +17,7 @@ DB_DATABASE=some-database-name
 
 2. Run `pip3 install -r dev-requirements.txt` to install necessary dependencies.
 
-3. This repo makes use of [pre-commit](https://pre-commit.com/) and [black](https://github.com/psf/black) to lint and format all files before they're committed. After you activate the virtual environment, run `pre-commit install` to set up the pre-commit script and `pre-commit run --all-files` to test it. If all was successful, you should see that `black` and `flake8` were run in the terminal. This step will help catch errors down the line **before** you commit.
+3. This repo makes use of [pre-commit](https://pre-commit.com/) and [black](https://github.com/psf/black) to lint and format all files before they're committed. After you activate the virtual environment, run `pre-commit install` to set up the pre-commit script and `pre-commit run -a` to test it. If all was successful, you should see that `black` and `flake8` were run in the terminal. This step will help catch errors down the line **before** you commit.
 
 ## Running the Server
 

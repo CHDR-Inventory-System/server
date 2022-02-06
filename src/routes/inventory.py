@@ -12,6 +12,73 @@ inventory_blueprint = Blueprint("inventory", __name__)
 VALID_IMAGE_EXTENSIONS = {"jpg", "png", "jpeg"}
 
 
+@Database.with_connection
+def query_by_id(item_id, **kwargs):
+    cursor = kwargs["cursor"]
+
+    cursor.execute("SELECT * from itemImage WHERE itemChild = %s" % (item_id,))
+    images = cursor.fetchone()
+
+    query = """
+        SELECT
+            A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+        FROM itemChild AS A
+        LEFT JOIN item AS B on A.item = B.ID
+        WHERE A.ID = %(item_id)s
+        UNION
+        SELECT
+            A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+        FROM itemChild AS A
+        LEFT JOIN item AS B on A.item = B.ID
+        WHERE A.ID = %(item_id)s
+    """
+
+    cursor.execute(query, {"item_id": item_id})
+    result = cursor.fetchone()
+
+    if not result:
+        return None
+
+    result["moveable"] = bool(result["moveable"])
+    result["available"] = bool(result["available"])
+    result["main"] = bool(result["main"])
+    result["images"] = images
+    result["children"] = []
+
+    if result["main"]:
+        query = """
+            SELECT
+                A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+            FROM itemChild AS A
+            LEFT JOIN item AS B on A.item = B.ID
+            WHERE A.item = %(item)s AND A.main = 0
+            UNION
+            SELECT
+                A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+            FROM itemChild AS A
+            LEFT JOIN item AS B on A.item = B.ID
+            WHERE A.item = %(item)s AND A.main = 0
+        """
+
+        cursor.reset()
+        cursor.execute(query, {"item": result["item"]})
+        children = cursor.fetchall()
+
+        for child in children:
+            cursor.execute(
+                "SELECT * FROM itemImage WHERE itemChild = %s" % (child["ID"],)
+            )
+
+            child["images"] = cursor.fetchall()
+            child["moveable"] = bool(child["moveable"])
+            child["available"] = bool(child["available"])
+            child["main"] = bool(child["main"])
+
+        result["children"] = children
+
+    return result
+
+
 @inventory_blueprint.route("/", methods=["GET"])
 @Database.with_connection
 def get_all(**kwargs):
@@ -129,72 +196,10 @@ def delete_item(item_id, **kwargs):
 
 
 @inventory_blueprint.route("/<int:item_id>", methods=["GET"])
-@Database.with_connection
-def get_item_by_id(item_id, **kwargs):
-    cursor = kwargs["cursor"]
-
+def get_item_by_id(item_id):
     try:
-        cursor.execute("SELECT * from itemImage WHERE itemChild = %s" % (item_id,))
-        images = cursor.fetchall()
-
-        query = """
-            SELECT
-                A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
-            FROM itemChild AS A
-            LEFT JOIN item AS B on A.item = B.ID
-            WHERE A.ID = %(item_id)s
-            UNION
-            SELECT
-                A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
-            FROM itemChild AS A
-            LEFT JOIN item AS B on A.item = B.ID
-            WHERE A.ID = %(item_id)s
-        """
-
-        cursor.execute(query, {"item_id": item_id})
-        result = cursor.fetchone()
-
-        if not result:
-            return create_error_response(f"No item found with id {item_id}", 404)
-
-        result["moveable"] = bool(result["moveable"])
-        result["available"] = bool(result["available"])
-        result["main"] = bool(result["main"])
-        result["images"] = images
-        result["children"] = []
-
-        if result["main"]:
-            query = """
-                SELECT
-                    A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
-                FROM itemChild AS A
-                LEFT JOIN item AS B on A.item = B.ID
-                WHERE A.item = %(item)s AND A.main = 0
-                UNION
-                SELECT
-                    A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
-                FROM itemChild AS A
-                LEFT JOIN item AS B on A.item = B.ID
-                WHERE A.item = %(item)s AND A.main = 0
-            """
-
-            cursor.reset()
-            cursor.execute(query, {"item": result["item"]})
-            children = cursor.fetchall()
-
-            for child in children:
-                cursor.execute(
-                    "SELECT * FROM itemImage WHERE itemChild = %s" % (child["ID"],)
-                )
-
-                child["images"] = cursor.fetchall()
-                child["moveable"] = bool(child["moveable"])
-                child["available"] = bool(child["available"])
-                child["main"] = bool(child["main"])
-
-            result["children"] = children
-
-        return jsonify(result)
+        item = query_by_id(item_id)
+        return jsonify(item)
     except mysql.connector.Error as err:
         current_app.log_exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
@@ -502,14 +507,14 @@ def add_item(**kwargs):
 
         cursor.execute(query, item_child_values)
         connection.commit()
+
+        inserted_item = query_by_id(cursor.lastrowid)
+
+        return jsonify(inserted_item)
     except mysql.connector.errors.Error as err:
         current_app.log_exception(str(err))
         connection.rollback()
         return create_error_response("An unexpected error occurred", 500)
-
-    # The item id is returned here so that the client can easily grab
-    # it and use it to upload images immediately afterwards
-    return jsonify({"itemID": item_child_values["item_id"]})
 
 
 @inventory_blueprint.route("/<int:item_id>/addChild", methods=["POST"])
@@ -569,7 +574,9 @@ def add_child_item(item_id, **kwargs):
         cursor.execute(query, values)
         connection.commit()
 
-        return jsonify({"itemID": cursor.lastrowid})
+        inserted_item = query_by_id(cursor.lastrowid)
+
+        return jsonify(inserted_item)
     except mysql.connector.errors.Error as err:
         current_app.log_exception(str(err))
         connection.rollback()
