@@ -1,3 +1,5 @@
+from os import path, getcwd, makedirs
+
 # See https://docs.gunicorn.org/en/stable/settings.html
 # for a complete list of configuration settings
 
@@ -18,3 +20,8 @@ capture_output = True
 bind = ["0.0.0.0:4565"]
 wsgi_app = "app:app"
 workers = 4
+
+# If the logs directory doesn't exist, create it
+current_dir = getcwd()
+log_directory = path.join(current_dir, "logs")
+makedirs(log_directory, exist_ok=True)
