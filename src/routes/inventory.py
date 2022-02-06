@@ -515,6 +515,9 @@ def add_item(**kwargs):
 @inventory_blueprint.route("/<int:item_id>/addChild", methods=["POST"])
 @Database.with_connection
 def add_child_item(item_id, **kwargs):
+    """
+    NOTE: Here, 'item_id' refers to the ID of the item in the item table
+    """
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
     post_data = request.get_json()
