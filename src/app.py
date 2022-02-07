@@ -36,8 +36,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--port",
         type=int,
-        default=5000,
-        help="The port the server should use (default 5000)",
+        default=4565,
+        help="The port the server should use (default 4565)",
     )
     parser.add_argument(
         "--host",
