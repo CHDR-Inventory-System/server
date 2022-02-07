@@ -23,7 +23,9 @@ DB_DATABASE=some-database-name
 
 To actually start the server, make sure the virtual environment is activated.
 
-Run `python3 src/app.py` to start the server. You can also run `python3 src/app.py --debug` to start the server in auto-reload mode. This will restart the server whenever you make a change to a file. If you want to run the server using a different host or port, you can also optionally pass `--port [PORT]` or `--host [HOST]`.
+Run `python3 src/app.py` to start the server. You can also run `python3 src/app.py --reload` to start the server in auto-reload mode. This will restart the server whenever you make a change to a file. If you want to run the server using a different host or port, you can also optionally pass `--port [PORT]` or `--host [HOST]`.
+
+For a full list of commands, run: `py src/app.py -h`
 
 
 If you're on a Unix system, you can also start the server with `gunicorn -c gunicorn.conf.py`. This allows you to keep track of server logs and make use of gunicorn workers. Use `gunicorn -c gunicorn.conf.py --reload` to start the server in auto-reload mode.

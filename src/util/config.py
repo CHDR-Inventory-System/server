@@ -12,6 +12,7 @@ secrets = {
     "LDAP_SERVER": os.getenv("LDAP_SERVER"),
     "BASE_DN": os.getenv("BASE_DN"),
     "DOMAIN": os.getenv("DOMAIN"),
+    "IMAGE_UPLOAD_FOLDER": os.getenv("IMAGE_UPLOAD_FOLDER", default="./images"),
 }
 
 

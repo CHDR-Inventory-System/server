@@ -340,6 +340,10 @@ def upload_image(item_id, **kwargs):
         # Check to see if we received a FormData object
         image = request.files["image"]
     except KeyError:
+        # No form data was passed so check the request body instead
+        pass
+
+    try:
         # We didn't get a FormData object so encode the base64 image as a
         # byte stream and save it
         filename = post_data["filename"]
@@ -351,8 +355,8 @@ def upload_image(item_id, **kwargs):
             filename=filename,
             content_type=content_type,
         )
-    except KeyError as err:
-        return create_error_response(f"Parameter {err.args[0]} is required", 400)
+    except KeyError:
+        return create_error_response("An image is required", 400)
     except Exception:
         return create_error_response("An unexpected error occurred", 500)
 
@@ -362,7 +366,7 @@ def upload_image(item_id, **kwargs):
         return create_error_response(f"Extension must be one of {extensions}", 400)
 
     try:
-        os.makedirs("images", exist_ok=True)
+        os.makedirs(current_app.config["IMAGE_FOLDER"], exist_ok=True)
 
         filename = secure_filename(image.filename)
 
