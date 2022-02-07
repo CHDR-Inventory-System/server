@@ -20,6 +20,7 @@ capture_output = True
 bind = ["0.0.0.0:4565"]
 wsgi_app = "app:app"
 workers = 4
+worker_class = "gevent"
 
 # If the logs directory doesn't exist, create it
 current_dir = getcwd()
