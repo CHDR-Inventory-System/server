@@ -36,7 +36,6 @@ class Database:
             try:
                 connection = _connection_pool.get_connection()
                 cursor = connection.cursor(dictionary=True)
-                current_app.logger.debug("Connection acquired")
                 return func(*args, cursor=cursor, connection=connection, **kwargs)
             except mysql.connector.Error as err:
                 current_app.logger.exception(str(err))
@@ -44,6 +43,5 @@ class Database:
             finally:
                 cursor.close()
                 connection.close()
-                current_app.logger.debug("Connection closed")
 
         return wrapper
