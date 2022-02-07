@@ -22,6 +22,13 @@ wsgi_app = "app:app"
 workers = 4
 worker_class = "gevent"
 
+# IMPORTANT: When gunicorn starts the application, the main process is forked
+# into a bunch of individual processes. This causes the job scheduler to run
+# extra times and also adds more connections to MySQL. In order to prevent this,
+# we'll preload the application to tell gunicorn to load the entire application
+# before forking the process: https://stackoverflow.com/a/40162246/9124220
+preload_app = True
+
 # If the logs directory doesn't exist, create it
 current_dir = getcwd()
 log_directory = path.join(current_dir, "logs")

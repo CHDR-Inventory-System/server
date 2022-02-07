@@ -1,25 +1,26 @@
 import mysql.connector
+import mysql.connector.pooling
 import functools
 from util.config import secrets
 from flask import current_app
 
-POOL_NAME = "database_pool"
+
+_connection_pool = mysql.connector.pooling.MySQLConnectionPool(
+    pool_name="database_pool",
+    pool_size=5,
+    # Timeout is given in seconds
+    connection_timeout=30,
+    host=secrets["DB_HOST"],
+    user=secrets["DB_USERNAME"],
+    password=secrets["DB_PASSWORD"],
+    database=secrets["DB_DATABASE"],
+)
 
 
 class Database:
     """
     A wrapper class that manages the MySQL connection pool.
     """
-
-    connection_pool = mysql.connector.connect(
-        pool_name=POOL_NAME,
-        pool_size=5,
-        connection_timeout=5,
-        host=secrets["DB_HOST"],
-        user=secrets["DB_USERNAME"],
-        password=secrets["DB_PASSWORD"],
-        database=secrets["DB_DATABASE"],
-    )
 
     @staticmethod
     def with_connection(func):
@@ -33,8 +34,9 @@ class Database:
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             try:
-                connection = mysql.connector.connect(pool_name=POOL_NAME)
+                connection = _connection_pool.get_connection()
                 cursor = connection.cursor(dictionary=True)
+                current_app.logger.debug("Connection acquired")
                 return func(*args, cursor=cursor, connection=connection, **kwargs)
             except mysql.connector.Error as err:
                 current_app.logger.exception(str(err))
@@ -42,5 +44,6 @@ class Database:
             finally:
                 cursor.close()
                 connection.close()
+                current_app.logger.debug("Connection closed")
 
         return wrapper
