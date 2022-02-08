@@ -34,13 +34,15 @@ def query_reservations(base_query: str, **kwargs):
         for reservation in reservations:
             query = """
                 SELECT
-                    A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+                    A.*, B.barcode, B.available, B.moveable, B.location,
+                    B.quantity, B.retiredDateTime
                 FROM itemChild AS A
                 LEFT JOIN item AS B on A.item = B.ID
                 WHERE A.item = %(item_id)s
                 UNION
                 SELECT
-                    A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+                    A.*, B.barcode, B.available, B.moveable, B.location,
+                    B.quantity, B.retiredDateTime
                 FROM itemChild AS A
                 LEFT JOIN item AS B on A.item = B.ID
                 WHERE A.item = %(item_id)s
