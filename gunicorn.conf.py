@@ -29,7 +29,16 @@ worker_class = "gevent"
 # before forking the process: https://stackoverflow.com/a/40162246/9124220
 preload_app = True
 
-# If the logs directory doesn't exist, create it
-current_dir = getcwd()
-log_directory = path.join(current_dir, "logs")
-makedirs(log_directory, exist_ok=True)
+# If the logs directory doesn't exist, try to create it
+try:
+    current_dir = getcwd()
+    log_directory = path.join(current_dir, "logs")
+    makedirs(log_directory, exist_ok=True)
+except Exception as err:
+    print(
+        f"""
+        Error creating logs directory. Create a folder named 'logs'
+        at the path {current_dir} before starting the server
+        """,
+        str(err),
+    )

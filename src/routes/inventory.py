@@ -4,6 +4,8 @@ from io import BytesIO
 from flask import Blueprint, jsonify, current_app, request
 from util.database import Database
 from util.response import create_error_response, convert_javascript_date
+from util.config import secrets
+from util.imaging import compress_image
 from werkzeug.utils import secure_filename
 from werkzeug.datastructures import FileStorage
 import base64
@@ -371,14 +373,16 @@ def upload_image(item_id, **kwargs):
         filename = secure_filename(image.filename)
 
         image_path = os.path.join(current_app.config["IMAGE_FOLDER"], filename)
+        image_url = secrets["SERVER_URL"] + filename
 
         query = """
-            INSERT INTO itemImage (itemChild, imagePath)
-            VALUES ("%s", "%s")
+            INSERT INTO itemImage (itemChild, imagePath, imageURL)
+            VALUES ("%s", "%s", "%s")
         """
-        cursor.execute(query % (item_id, image_path))
+        cursor.execute(query % (item_id, image_path, image_url))
 
         image.save(image_path)
+        compress_image(image_path)
 
         connection.commit()
 

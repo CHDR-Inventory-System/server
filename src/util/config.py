@@ -13,6 +13,7 @@ secrets = {
     "BASE_DN": os.getenv("BASE_DN"),
     "DOMAIN": os.getenv("DOMAIN"),
     "IMAGE_UPLOAD_FOLDER": os.getenv("IMAGE_UPLOAD_FOLDER", default="./images"),
+    "SERVER_URL": os.getenv("SERVER_URL", default=""),
 }
 
 
