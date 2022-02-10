@@ -373,7 +373,7 @@ def upload_image(item_id, **kwargs):
         filename = secure_filename(image.filename)
 
         image_path = os.path.join(current_app.config["IMAGE_FOLDER"], filename)
-        image_url = secrets["SERVER_URL"] + filename
+        image_url = f"{secrets['BASE_URL']}/images/{filename}"
 
         query = """
             INSERT INTO itemImage (itemChild, imagePath, imageURL)
