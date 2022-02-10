@@ -9,7 +9,7 @@ def compress_image(image_path: str):
     """
     image = Image.open(image_path)
     width, height = image.size
-    scale_factor = 0.90
+    scale_factor = 0.70
 
     width = int(width * scale_factor)
     height = int(height * scale_factor)
@@ -23,7 +23,7 @@ def compress_image(image_path: str):
 
         image.save(
             image_path,
-            quality=40,
+            quality=20,
             optimize=True,
         )
     except Exception as err:
