@@ -190,12 +190,6 @@ def create_reservation(**kwargs):
         if result is None:
             return create_error_response("Invalid item ID", 400)
 
-        cursor.execute("SELECT ID from users WHERE ID = %s" % (reservation["user"],))
-        result = cursor.fetchone()
-
-        if result is None:
-            return create_error_response("Invalid user ID", 400)
-
         query = """
             INSERT INTO reservation (item, user, startDateTime, endDateTime, status)
             VALUES (
