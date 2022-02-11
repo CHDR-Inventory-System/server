@@ -71,7 +71,7 @@ def query_reservations(base_query: str, **kwargs):
             # from the database
             cursor.execute(
                 """
-                SELECT ID, nid, email, verified, role, created, fullName
+                SELECT ID, email, verified, role, created, fullName
                 FROM users
                 WHERE ID = %s
                 LIMIT 1
@@ -89,7 +89,7 @@ def query_reservations(base_query: str, **kwargs):
             if reservation["userAdminID"] is not None:
                 cursor.execute(
                     """
-                    SELECT ID, nid, email, verified, role, created, fullName
+                    SELECT ID, email, verified, role, created, fullName
                     FROM users
                     WHERE ID = %s AND (role = 'Admin' OR role = 'Super')
                     LIMIT 1
@@ -155,14 +155,33 @@ def create_reservation(**kwargs):
     reservation = {}
 
     try:
+        cursor.execute(
+            "SELECT ID FROM users WHERE email = '%s'" % (post_data["email"],)
+        )
+
+        user = cursor.fetchone()
+
+        if not user:
+            return create_error_response("Email not found", 404)
+
+        reservation["user"] = user["ID"]
+
+        # item refers to the ID of the item in the "item" table
         reservation["item"] = post_data["item"]
-        reservation["user"] = post_data["user"]
         reservation["start_date_time"] = convert_javascript_date(
             post_data["startDateTime"]
         )
         reservation["end_date_time"] = convert_javascript_date(post_data["endDateTime"])
+
+        reservation["status"] = post_data.get("status", "Pending")
+
+        if reservation["status"].lower() not in VALID_RESERVATION_STATUSES:
+            return create_error_response("Invalid reservation status", 400)
     except KeyError as err:
         return create_error_response(f"Parameter {err.args[0]} is required", 400)
+    except mysql.connector.Error as err:
+        current_app.logger.exception(str(err))
+        return create_error_response("An unexpected error occurred", 500)
 
     try:
         cursor.execute("SELECT ID from item WHERE ID = %s" % (reservation["item"],))
@@ -178,12 +197,13 @@ def create_reservation(**kwargs):
             return create_error_response("Invalid user ID", 400)
 
         query = """
-            INSERT INTO reservation (item, user, startDateTime, endDateTime)
+            INSERT INTO reservation (item, user, startDateTime, endDateTime, status)
             VALUES (
                 %(item)s,
                 %(user)s,
                 %(start_date_time)s,
-                %(end_date_time)s
+                %(end_date_time)s,
+                %(status)s
             )
         """
 
@@ -193,7 +213,10 @@ def create_reservation(**kwargs):
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
 
-    return jsonify({"status": "Success"})
+    # Return the newly created reservation
+    return query_reservations(
+        "SELECT * FROM reservation WHERE ID = %s" % (cursor.lastrowid,)
+    )
 
 
 @reservation_blueprint.route("/<int:reservation_id>", methods=["DELETE"])
