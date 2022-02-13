@@ -17,11 +17,14 @@ VALID_RESERVATION_STATUSES = {
 
 
 @Database.with_connection
-def query_reservations(base_query: str, **kwargs):
+def query_reservations(base_query: str, as_json=True, **kwargs):
     """
     A helper function that uses "base_query" to select reservations from
     the reservation table and build a JSON structure that includes the
     item, user, and admin who approves it
+
+    If as_json is true, this will cause this function to return a jsonified
+    response. Otherwise, it'll return an array of reservations.
     """
     cursor = kwargs["cursor"]
 
@@ -64,6 +67,7 @@ def query_reservations(base_query: str, **kwargs):
 
                 item["images"] = cursor.fetchall()
 
+            # Using next here to find the first reservation that matches this condition
             main_item = next((item for item in items if bool(item["main"])), None)
             main_item["children"] = [item for item in items if not bool(item["main"])]
 
@@ -109,7 +113,7 @@ def query_reservations(base_query: str, **kwargs):
             # we no longer need this property
             del reservation["userAdminID"]
 
-        return jsonify(reservations)
+        return jsonify(reservations) if as_json else reservations
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
     return create_error_response("An unexpected error occurred", 500)
@@ -176,9 +180,23 @@ def create_reservation(**kwargs):
         reservation["end_date_time"] = convert_javascript_date(post_data["endDateTime"])
 
         reservation["status"] = post_data.get("status", "Pending")
+        reservation["admin_id"] = post_data.get("adminId", None)
 
         if reservation["status"].lower() not in VALID_RESERVATION_STATUSES:
             return create_error_response("Invalid reservation status", 400)
+
+        if reservation["admin_id"]:
+            cursor.execute(
+                "SELECT role FROM users WHERE ID = %s" % (int(reservation["admin_id"]))
+            )
+            admin = cursor.fetchone()
+
+            if not admin:
+                return create_error_response("No admin with this ID", 404)
+
+            if admin["role"].lower() not in {"admin", "super"}:
+                return create_error_response("Insufficient permissions", 401)
+
     except KeyError as err:
         return create_error_response(f"Parameter {err.args[0]} is required", 400)
     except mysql.connector.Error as err:
@@ -193,26 +211,37 @@ def create_reservation(**kwargs):
             return create_error_response("Invalid item ID", 400)
 
         query = """
-            INSERT INTO reservation (item, user, startDateTime, endDateTime, status)
+            INSERT INTO reservation (
+                item,
+                user,
+                startDateTime,
+                endDateTime,
+                status,
+                userAdminID
+            )
             VALUES (
                 %(item)s,
                 %(user)s,
                 %(start_date_time)s,
                 %(end_date_time)s,
-                %(status)s
+                %(status)s,
+                %(admin_id)s
             )
         """
 
         cursor.execute(query, reservation)
         connection.commit()
+
+        # Return the newly created reservation
+        reservations = query_reservations(
+            "SELECT * FROM reservation WHERE ID = %s" % (cursor.lastrowid,),
+            as_json=False,
+        )
+
+        return reservations[0]
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
-
-    # Return the newly created reservation
-    return query_reservations(
-        "SELECT * FROM reservation WHERE ID = %s" % (cursor.lastrowid,)
-    )
 
 
 @reservation_blueprint.route("/<int:reservation_id>", methods=["DELETE"])
