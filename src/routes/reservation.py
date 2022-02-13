@@ -260,13 +260,18 @@ def delete_reservation(reservation_id, **kwargs):
     return jsonify({"status": "Success"})
 
 
-@reservation_blueprint.route("/<int:reservation_id>/status", methods=["PUT"])
+@reservation_blueprint.route("/<int:reservation_id>/status", methods=["PATCH"])
 @Database.with_connection
 def update_status(reservation_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
 
     post_data = request.get_json()
+
+    if not post_data:
+        return create_error_response("A body is required", 400)
+
+    admin_id = post_data.get("adminId")
 
     try:
         status = post_data["status"]
@@ -281,6 +286,13 @@ def update_status(reservation_id, **kwargs):
             "UPDATE reservation SET status = '%s' WHERE ID = %s"
             % (status, reservation_id)
         )
+
+        if admin_id is not None:
+            cursor.execute(
+                "UPDATE reservation SET userAdminID = %s WHERE ID = %s"
+                % (int(admin_id), reservation_id)
+            )
+
         connection.commit()
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
