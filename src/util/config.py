@@ -14,6 +14,9 @@ secrets = {
     "DOMAIN": os.getenv("DOMAIN"),
     "IMAGE_UPLOAD_FOLDER": os.getenv("IMAGE_UPLOAD_FOLDER", default="./images"),
     "BASE_URL": os.getenv("BASE_URL", default=""),
+    "SCHEDULER_ENABLED": (
+        os.getenv("SCHEDULER_ENABLED", default="true").lower() == "true"
+    ),
 }
 
 

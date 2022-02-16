@@ -7,13 +7,16 @@ from flask import Flask
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from util.config import secrets
+from util.scheduler import init_scheduler
 
 app = Flask(__name__)
 app.config["IMAGE_FOLDER"] = secrets["IMAGE_UPLOAD_FOLDER"]
 app.config["JWT_SECRET_KEY"] = secrets["JWT_SECRET_KEY"]
+app.config["SCHEDULER_TIMEZONE"] = "America/New_York"
 
 CORS(app)
 JWTManager(app)
+init_scheduler(app)
 
 gunicorn_logger = logging.getLogger("gunicorn.error")
 app.logger.handlers = gunicorn_logger.handlers
