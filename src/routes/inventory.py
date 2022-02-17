@@ -345,22 +345,23 @@ def upload_image(item_id, **kwargs):
         # No form data was passed so check the request body instead
         pass
 
-    try:
-        # We didn't get a FormData object so encode the base64 image as a
-        # byte stream and save it
-        filename = post_data["filename"]
-        content_type = "image/png" if filename.endswith("png") else "image/jpeg"
-        file_data = BytesIO(base64.b64decode(post_data["image"]))
+    # We didn't get a FormData object so encode the base64 image as a
+    # byte stream and save it
+    if not image:
+        try:
+            filename = post_data["filename"]
+            content_type = "image/png" if filename.endswith("png") else "image/jpeg"
+            file_data = BytesIO(base64.b64decode(post_data["image"]))
 
-        image = FileStorage(
-            stream=file_data,
-            filename=filename,
-            content_type=content_type,
-        )
-    except KeyError:
-        return create_error_response("An image is required", 400)
-    except Exception:
-        return create_error_response("An unexpected error occurred", 500)
+            image = FileStorage(
+                stream=file_data,
+                filename=filename,
+                content_type=content_type,
+            )
+        except KeyError:
+            return create_error_response("An image is required", 400)
+        except Exception:
+            return create_error_response("An unexpected error occurred", 500)
 
     # Make sure we only received images with valid extensions
     if image.filename.split(".")[-1] not in VALID_IMAGE_EXTENSIONS:
@@ -386,7 +387,15 @@ def upload_image(item_id, **kwargs):
 
         connection.commit()
 
-        return jsonify({"imageID": cursor.lastrowid})
+        cursor.execute(
+            """
+            SELECT ID, created, imagePath, imageURL, itemChild
+            FROM itemImage WHERE ID = %s
+            """
+            % (cursor.lastrowid,)
+        )
+
+        return jsonify(cursor.fetchone())
     except Exception as err:
         current_app.logger.exception(str(err))
         connection.rollback()
