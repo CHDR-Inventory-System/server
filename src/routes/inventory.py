@@ -143,6 +143,9 @@ def get_all(**kwargs):
 @inventory_blueprint.route("/<int:item_id>", methods=["DELETE"])
 @Database.with_connection
 def delete_item(item_id, **kwargs):
+    """
+    NOTE: Here, "item_id" refers to the ID in the "itemChild" table
+    """
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
 
@@ -169,16 +172,19 @@ def delete_item(item_id, **kwargs):
 
     try:
         cursor.execute("SELECT item, main FROM itemChild WHERE ID = %s", (item_id,))
-
         item = cursor.fetchone()
 
-        # If this is the main item, we also need to delete its associated children
+        if not item:
+            return create_error_response("Item not found", 404)
+
+        # If this is the main item, we'll just delete the base item from the item table
         if item["main"]:
             cursor.execute(
-                "DELETE FROM itemChild WHERE item = %s AND main = 0", (item["item"])
+                "DELETE FROM item WHERE ID = %s",
+                (item["item"],),
             )
-
-        cursor.execute("DELETE FROM itemChild WHERE ID = %s", (item_id,))
+        else:
+            cursor.execute("DELETE FROM itemChild WHERE ID = %s", (item_id,))
 
         connection.commit()
     except mysql.connector.Error as err:
