@@ -15,6 +15,9 @@ secrets = {
     "EMAIL_PORT": os.getenv("EMAIL_PORT"),
     "EMAIL_USE_SSL": os.getenv("EMAIL_USE_SSL").lower() == "true",
     "EMAIL_USE_TLS": os.getenv("EMAIL_USE_TLS").lower() == "true",
+    "LDAP_SERVER": os.getenv("LDAP_SERVER"),
+    "BASE_DN": os.getenv("BASE_DN"),
+    "DOMAIN": os.getenv("DOMAIN"),
 }
 
 
