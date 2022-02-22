@@ -6,12 +6,13 @@ from util.response import create_error_response, convert_javascript_date
 reservation_blueprint = Blueprint("reservation", __name__)
 
 VALID_RESERVATION_STATUSES = {
-    "pending",
-    "denied",
     "approved",
-    "missed",
+    "cancelled",
     "checked out",
+    "denied",
     "late",
+    "missed",
+    "pending",
     "returned",
 }
 
@@ -57,7 +58,7 @@ def query_reservations(base_query: str, **kwargs):
                 item["main"] = bool(item["main"])
 
                 cursor.execute(
-                    "SELECT * from itemImage WHERE itemChild = %s" % (item["ID"])
+                    "SELECT * from itemImage WHERE itemChild = %s", (item["ID"],)
                 )
 
                 item["images"] = cursor.fetchall()
@@ -71,12 +72,12 @@ def query_reservations(base_query: str, **kwargs):
             # from the database
             cursor.execute(
                 """
-                SELECT ID, nid, email, verified, role, created, fullName
+                SELECT ID, email, verified, role, created, fullName
                 FROM users
                 WHERE ID = %s
                 LIMIT 1
-                """
-                % (reservation["user"],)
+                """,
+                (reservation["user"],),
             )
 
             user = cursor.fetchone()
@@ -89,12 +90,12 @@ def query_reservations(base_query: str, **kwargs):
             if reservation["userAdminID"] is not None:
                 cursor.execute(
                     """
-                    SELECT ID, nid, email, verified, role, created, fullName
+                    SELECT ID, email, verified, role, created, fullName
                     FROM users
                     WHERE ID = %s AND (role = 'Admin' OR role = 'Super')
                     LIMIT 1
-                    """
-                    % (reservation["userAdminID"],),
+                    """,
+                    (reservation["userAdminID"],),
                 )
                 admin = cursor.fetchone()
                 admin["verified"] = bool(admin["verified"])
@@ -155,35 +156,47 @@ def create_reservation(**kwargs):
     reservation = {}
 
     try:
+        cursor.execute("SELECT ID FROM users WHERE email = '%s'", (post_data["email"],))
+
+        user = cursor.fetchone()
+
+        if not user:
+            return create_error_response("Email not found", 404)
+
+        reservation["user"] = user["ID"]
+
+        # item refers to the ID of the item in the "item" table
         reservation["item"] = post_data["item"]
-        reservation["user"] = post_data["user"]
         reservation["start_date_time"] = convert_javascript_date(
             post_data["startDateTime"]
         )
         reservation["end_date_time"] = convert_javascript_date(post_data["endDateTime"])
+
+        reservation["status"] = post_data.get("status", "Pending")
+
+        if reservation["status"].lower() not in VALID_RESERVATION_STATUSES:
+            return create_error_response("Invalid reservation status", 400)
     except KeyError as err:
         return create_error_response(f"Parameter {err.args[0]} is required", 400)
+    except mysql.connector.Error as err:
+        current_app.logger.exception(str(err))
+        return create_error_response("An unexpected error occurred", 500)
 
     try:
-        cursor.execute("SELECT ID from item WHERE ID = %s" % (reservation["item"],))
+        cursor.execute("SELECT ID from item WHERE ID = %s", (reservation["item"],))
         result = cursor.fetchone()
 
         if result is None:
             return create_error_response("Invalid item ID", 400)
 
-        cursor.execute("SELECT ID from users WHERE ID = %s" % (reservation["user"],))
-        result = cursor.fetchone()
-
-        if result is None:
-            return create_error_response("Invalid user ID", 400)
-
         query = """
-            INSERT INTO reservation (item, user, startDateTime, endDateTime)
+            INSERT INTO reservation (item, user, startDateTime, endDateTime, status)
             VALUES (
                 %(item)s,
                 %(user)s,
                 %(start_date_time)s,
-                %(end_date_time)s
+                %(end_date_time)s,
+                %(status)s
             )
         """
 
@@ -193,7 +206,10 @@ def create_reservation(**kwargs):
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
 
-    return jsonify({"status": "Success"})
+    # Return the newly created reservation
+    return query_reservations(
+        "SELECT * FROM reservation WHERE ID = %s" % (cursor.lastrowid,)
+    )
 
 
 @reservation_blueprint.route("/<int:reservation_id>", methods=["DELETE"])
@@ -203,7 +219,7 @@ def delete_reservation(reservation_id, **kwargs):
     connection = kwargs["connection"]
 
     try:
-        cursor.execute("DELETE FROM reservation WHERE ID = %s" % (reservation_id,))
+        cursor.execute("DELETE FROM reservation WHERE ID = %s", (reservation_id,))
         connection.commit()
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
@@ -230,8 +246,8 @@ def update_status(reservation_id, **kwargs):
 
     try:
         cursor.execute(
-            "UPDATE reservation SET status = '%s' WHERE ID = %s"
-            % (status, reservation_id)
+            "UPDATE reservation SET status = '%s' WHERE ID = %s",
+            (status, reservation_id),
         )
         connection.commit()
     except mysql.connector.Error as err:
