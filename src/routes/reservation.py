@@ -6,12 +6,13 @@ from util.response import create_error_response, convert_javascript_date
 reservation_blueprint = Blueprint("reservation", __name__)
 
 VALID_RESERVATION_STATUSES = {
-    "pending",
-    "denied",
     "approved",
-    "missed",
+    "cancelled",
     "checked out",
+    "denied",
     "late",
+    "missed",
+    "pending",
     "returned",
 }
 
