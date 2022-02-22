@@ -8,8 +8,26 @@ import re
 import mysql.connector
 import uuid
 import bcrypt
+import textwrap
 
 users_blueprint = Blueprint("users", __name__)
+
+
+def create_verification_link(user_id: str, verification_code: str):
+    base_url = (
+        "http://127.0.0.1:9000" if current_app.debug else "https://chdr.cs.ucf.edu/csi"
+    )
+
+    return f"{base_url}/#/verify/?id={user_id}&verificationCode={verification_code}"
+
+
+def create_verification_email_body(user_id: str, name: str, verification_code: str):
+    return textwrap.dedent(
+        f"""
+        Hello {name}, to verify your account, please click the following link:
+        {create_verification_link(user_id, verification_code)}
+        """
+    )
 
 
 @users_blueprint.route("/register", methods=["POST"])
@@ -25,8 +43,8 @@ def register(**kwargs):
         return create_error_response("A body is required", 400)
 
     try:
-        firstname = incoming_data["firstname"]
-        lastname = incoming_data["lastname"]
+        firstname = incoming_data["firstName"]
+        lastname = incoming_data["lastName"]
         email = incoming_data["email"]
         password = incoming_data["password"]
 
@@ -39,15 +57,13 @@ def register(**kwargs):
     try:
 
         full_name = f"{firstname} {lastname}"
-
-        hashed_Password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
+        hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
 
         # Check to see if account exist already or not
         cursor.execute("SELECT ID FROM users WHERE email = %s", (email,))
-        exist_acc = cursor.fetchone()
+        user = cursor.fetchone()
 
-        if exist_acc:
-
+        if user:
             return create_error_response(
                 "An account with this email already exists", 409
             )
@@ -55,51 +71,42 @@ def register(**kwargs):
         # Set role and verified automatically to user and unverified
         verified = 0
         role = "User"
-        verifiCode = uuid.uuid4()
-        verifiCode = str(verifiCode)
+        verification_code = str(uuid.uuid4())
 
         query = """
-        INSERT INTO users(fullName,email, verified, role, password, verificationCode)
-        VALUES(%s, %s, %s, %s, %s,%s)
+            INSERT INTO users
+            (fullName, email, verified, role, password, verificationCode)
+            VALUES(%s, %s, %s, %s, %s, %s)
         """
         data = (
             full_name,
             email,
             verified,
             role,
-            hashed_Password,
-            verifiCode,
+            hashed_password,
+            verification_code,
         )
 
         cursor.execute(query, data)
         connection.commit()
 
-        # excecute for the user to get their ID to pass along with the link
+        # execute for the user to get their ID to pass along with the link
         cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
         user = cursor.fetchone()
 
         if not user:
             return create_error_response("An unexpected error occurred", 500)
 
-        ID = user["ID"]
-        num = str(ID)
-        verification_link = (
-            f"http://127.0.0.1:4565/verify/?id={num}&verificationCode={verifiCode}"
-        )
-        subj = "Verify Account"
-        body = (
-            "Hello"
-            + " "
-            + full_name
-            + ","
-            + "to verify your account, please click the following link:"
-            + verification_link
+        body = create_verification_email_body(
+            user_id=user["ID"],
+            name=user["fullName"],
+            verification_code=verification_code,
         )
 
         try:
-            Emailer.send_email(email, subj, body)
-        except SMTPException as e:
-            current_app.logger.error(e.message)
+            Emailer.send_email(email, "Verify Your Account", body)
+        except SMTPException as err:
+            current_app.logger.exception(str(err))
 
         return jsonify({"status": "New account created"})
 
@@ -111,7 +118,7 @@ def register(**kwargs):
 
 @users_blueprint.route("/verify", methods=["PATCH"])
 @Database.with_connection
-def update_Verification(**kwargs):
+def update_verification(**kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
 
@@ -122,37 +129,39 @@ def update_Verification(**kwargs):
         return create_error_response("A body is required", 400)
 
     try:
-        user_Id = incoming_data["userId"]
-        verification_Code = incoming_data["verificationCode"]
-
+        user_id = incoming_data["userId"]
+        verification_code = incoming_data["verificationCode"]
     except KeyError as err:
         return create_error_response(f"Parameter {err.args[0]} is required", 400)
 
-    cursor.execute("SELECT * FROM users WHERE ID = %s", (user_Id,))
+    cursor.execute("SELECT verificationCode FROM users WHERE ID = %s", (user_id,))
     user = cursor.fetchone()
 
     if not user:
-        return create_error_response("User does not exist", 404)
-    database_code = user["verificationCode"]
-    verifyValue = 1
+        return create_error_response("Invalid credentials", 400)
 
-    print(database_code)
-    print(verification_Code)
+    database_verification_code = user["verificationCode"]
 
-    if verification_Code != database_code:
-        return create_error_response("Invalid email credentials!", 400)
+    if verification_code != database_verification_code:
+        return create_error_response("Invalid credentials", 400)
 
-    if verification_Code == database_code:
+    verification_code = str(uuid.uuid4())
+    query = "UPDATE users SET verified = %s, verificationCode = %s WHERE ID = %s"
 
-        query = "UPDATE users SET verified = %s WHERE ID = %s " % (verifyValue, user_Id)
+    try:
+        cursor.execute(
+            query,
+            (
+                1,
+                verification_code,
+                user_id,
+            ),
+        )
+        connection.commit()
 
-        try:
-            cursor.execute(query)
-            connection.commit()
-
-            return jsonify({"status": "Success"})
-        except (Exception, LookupError) as err:
-            current_app.logger.exception(str(err))
+        return jsonify({"status": "Success"})
+    except Exception as err:
+        current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
 
 
@@ -183,9 +192,9 @@ def login(**kwargs):
         if not user:
             return create_error_response("Invalid credentials", 401)
 
-        hash_pwrd = user["password"]
+        hashed_password = user["password"]
 
-        if bcrypt.checkpw(password.encode("utf-8"), hash_pwrd.encode("utf-8")):
+        if bcrypt.checkpw(password.encode("utf-8"), hashed_password.encode("utf-8")):
             token = create_access_token(
                 identity={
                     "ID": user["ID"],
@@ -205,8 +214,8 @@ def login(**kwargs):
                     "token": token,
                 }
             )
-        else:
-            return create_error_response("Invalid credentials", 401)
+
+        return create_error_response("Invalid credentials", 401)
     except Exception as err:
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
@@ -214,7 +223,7 @@ def login(**kwargs):
 
 @users_blueprint.route("/<int:user_id>", methods=["DELETE"])
 @Database.with_connection
-def delete(user_id, **kwargs):
+def delete_user(user_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
 
@@ -233,22 +242,20 @@ def delete(user_id, **kwargs):
         # checks to see if user exist or not
         query = "SELECT * FROM users WHERE email = %s"
         cursor.execute(query, (email,))
-        exist_acc = cursor.fetchone()
+        user = cursor.fetchone()
 
-        if not exist_acc:
+        if not user:
             return create_error_response("Invalid credentials", 401)
 
-        hash_pwrd = exist_acc["password"]
-
-        if not bcrypt.checkpw(password.encode("utf-8"), hash_pwrd.encode("utf-8")):
+        if not bcrypt.checkpw(
+            password.encode("utf-8"), user["password"].encode("utf-8")
+        ):
             return create_error_response("Invalid credentials", 401)
 
-        bcrypt.checkpw(password.encode("utf-8"), hash_pwrd.encode("utf-8"))
         # sql query to delete user if it exists already
         query = "DELETE FROM users WHERE ID = %s"
 
-        cursor.execute("DELETE FROM reservation WHERE user = %s" % (user_id,))
-        cursor.execute(query % (user_id,))
+        cursor.execute(query, (user_id,))
 
         connection.commit()
 
@@ -261,7 +268,7 @@ def delete(user_id, **kwargs):
 
 @users_blueprint.route("/<int:user_id>", methods=["GET"])
 @Database.with_connection
-def get_user_by_ID(user_id, **kwargs):
+def get_user_by_id(user_id, **kwargs):
     cursor = kwargs["cursor"]
 
     try:
@@ -317,24 +324,21 @@ def update_user_role(user_id, **kwargs):
 
     request_data = request.get_json()
 
+    if not request_data:
+        return create_error_response("A body is required", 400)
+
     try:
         user_role = request_data["role"]
     except KeyError:
         return create_error_response("A role is required", 400)
-    except TypeError:
-        return create_error_response("A role is required", 400)
 
-    if (
-        user_role.lower() != "user"
-        and user_role.lower() != "admin"
-        and user_role.lower() != "super"
-    ):
+    if user_role.lower() not in {"user", "super", "admin"}:
         return create_error_response("Role is invalid", 406)
 
-    query = "UPDATE users SET role = '%s' WHERE ID = '%s'" % (user_role, user_id)
+    query = "UPDATE users SET role = '%s' WHERE ID = '%s'"
 
     try:
-        cursor.execute(query)
+        cursor.execute(query, (user_role, user_id))
         connection.commit()
     except mysql.connection.Error as err:
         current_app.logger.exception(str(err))
@@ -343,7 +347,6 @@ def update_user_role(user_id, **kwargs):
     return jsonify({"status": "Success"})
 
 
-# CHECK TO SEE IF IT WORK
 @users_blueprint.route("/<int:user_id>/email", methods=["PATCH"])
 @Database.with_connection
 def update_user_email(user_id, **kwargs):
@@ -358,53 +361,49 @@ def update_user_email(user_id, **kwargs):
     try:
         email = request_data["email"]
         password = request_data["password"]
-    except (KeyError, TypeError):
-        return create_error_response("Please enter the required credentials", 400)
+    except KeyError as err:
+        return create_error_response(f"Parameter {err.args[0]} is required", 400)
 
     try:
-
-        # sql query to check if nid exists already
         cursor.execute("SELECT * FROM users WHERE ID = %s", (user_id,))
         user = cursor.fetchone()
-        hash_pwrd = user["password"]
-        verifiCode = uuid.uuid4()
-        verifiCode = str(verifiCode)
 
         if not user:
             return create_error_response("Invalid credentials", 401)
 
-        if bcrypt.checkpw(password.encode("utf-8"), hash_pwrd.encode("utf-8")):
-            query = """
-                    UPDATE users
-                    SET email = '%s', verificationCode = '%s', verified = 0
-                    WHERE ID = %s
-            """ % (
+        if not bcrypt.checkpw(
+            password.encode("utf-8"), user["password"].encode("utf-8")
+        ):
+            return create_error_response("Invalid credentials", 401)
+
+        verification_code = str(uuid.uuid4())
+
+        query = """
+            UPDATE users
+            SET email = %s, verificationCode = %s, verified = 0
+            WHERE ID = %s
+        """
+
+        cursor.execute(
+            query,
+            (
                 email,
-                verifiCode,
+                verification_code,
                 user_id,
-            )
+            ),
+        )
+        connection.commit()
 
-            cursor.execute(query)
-            connection.commit()
+        body = create_verification_email_body(
+            user_id=user["ID"],
+            name=user["fullName"],
+            verification_code=verification_code,
+        )
 
-            num = str(user_id)
-            verification_link = (
-                f"http://127.0.0.1:4565/verify/?id={num}&verificationCode={verifiCode}"
-            )
-            subj = "Verify Account"
-            body = (
-                "Hello"
-                + " "
-                + user["fullName"]
-                + ","
-                + "To verify your account, please click the following link:"
-                + verification_link
-            )
-
-            try:
-                Emailer.send_email(email, subj, body)
-            except SMTPException as e:
-                current_app.logger.error(e.message)
+        try:
+            Emailer.send_email(email, "Verify Your Email", body)
+        except SMTPException as e:
+            current_app.logger.error(e.message)
 
     except mysql.connection.Error as err:
         current_app.logger.exception(str(err))
