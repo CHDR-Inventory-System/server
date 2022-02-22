@@ -57,7 +57,7 @@ def query_reservations(base_query: str, **kwargs):
                 item["main"] = bool(item["main"])
 
                 cursor.execute(
-                    "SELECT * from itemImage WHERE itemChild = %s" % (item["ID"])
+                    "SELECT * from itemImage WHERE itemChild = %s", (item["ID"],)
                 )
 
                 item["images"] = cursor.fetchall()
@@ -75,8 +75,8 @@ def query_reservations(base_query: str, **kwargs):
                 FROM users
                 WHERE ID = %s
                 LIMIT 1
-                """
-                % (reservation["user"],)
+                """,
+                (reservation["user"],),
             )
 
             user = cursor.fetchone()
@@ -93,8 +93,8 @@ def query_reservations(base_query: str, **kwargs):
                     FROM users
                     WHERE ID = %s AND (role = 'Admin' OR role = 'Super')
                     LIMIT 1
-                    """
-                    % (reservation["userAdminID"],),
+                    """,
+                    (reservation["userAdminID"],),
                 )
                 admin = cursor.fetchone()
                 admin["verified"] = bool(admin["verified"])
@@ -155,9 +155,7 @@ def create_reservation(**kwargs):
     reservation = {}
 
     try:
-        cursor.execute(
-            "SELECT ID FROM users WHERE email = '%s'" % (post_data["email"],)
-        )
+        cursor.execute("SELECT ID FROM users WHERE email = '%s'", (post_data["email"],))
 
         user = cursor.fetchone()
 
@@ -184,7 +182,7 @@ def create_reservation(**kwargs):
         return create_error_response("An unexpected error occurred", 500)
 
     try:
-        cursor.execute("SELECT ID from item WHERE ID = %s" % (reservation["item"],))
+        cursor.execute("SELECT ID from item WHERE ID = %s", (reservation["item"],))
         result = cursor.fetchone()
 
         if result is None:
@@ -220,7 +218,7 @@ def delete_reservation(reservation_id, **kwargs):
     connection = kwargs["connection"]
 
     try:
-        cursor.execute("DELETE FROM reservation WHERE ID = %s" % (reservation_id,))
+        cursor.execute("DELETE FROM reservation WHERE ID = %s", (reservation_id,))
         connection.commit()
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
@@ -247,8 +245,8 @@ def update_status(reservation_id, **kwargs):
 
     try:
         cursor.execute(
-            "UPDATE reservation SET status = '%s' WHERE ID = %s"
-            % (status, reservation_id)
+            "UPDATE reservation SET status = '%s' WHERE ID = %s",
+            (status, reservation_id),
         )
         connection.commit()
     except mysql.connector.Error as err:
