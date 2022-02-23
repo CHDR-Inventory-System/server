@@ -104,7 +104,7 @@ def register(**kwargs):
         )
 
         try:
-            Emailer.send_email(email, "Verify Your Account", body)
+            Emailer.send_email(email, "Verify Your Email", body)
         except SMTPException as err:
             current_app.logger.exception(str(err))
 
@@ -410,3 +410,45 @@ def update_user_email(user_id, **kwargs):
         return create_error_response("An unexpected error occurred", 500)
 
     return jsonify({"status": "Success"})
+
+
+@users_blueprint.route("/resendVerificationEmail", methods=["POST"])
+@Database.with_connection
+def resendVerificationEmail(**kwargs):
+    cursor = kwargs["cursor"]
+    post_data = request.get_json()
+
+    if not post_data:
+        return create_error_response("A body is required", 400)
+
+    try:
+        email = post_data["email"]
+    except KeyError:
+        return create_error_response("Parameter email is required", 400)
+
+    try:
+        cursor.execute(
+            "SELECT ID, verificationCode, fullName from users WHERE email = %s",
+            (email,),
+        )
+        user = cursor.fetchone()
+
+        if not user:
+            return create_error_response("Couldn't find a user with this email", 404)
+
+    except mysql.connector.errors.Error as err:
+        current_app.logger.error(str(err))
+        return create_error_response("An unexpected error occurred", 500)
+
+    body = create_verification_email_body(
+        user_id=user["ID"],
+        name=user["fullName"],
+        verification_code=user["verificationCode"],
+    )
+
+    try:
+        Emailer.send_email(email, "Verify Your Email", body)
+        return jsonify({"status": "Success"})
+    except SMTPException as err:
+        current_app.logger.exception(str(err))
+        return create_error_response("An unexpected error occurred", 500)
