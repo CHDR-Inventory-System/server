@@ -623,59 +623,90 @@ def update_item(item_id, **kwargs):
     quantity = put_data.get("quantity")
 
     try:
-        item_child_query = "UPDATE itemChild SET %s = %s WHERE ID = %s"
-
-        # Because some of these values are strings while some are numbers, the string
-        # values will need to be surrounded with quotes
         if name is not None:
-            cursor.execute(item_child_query, ("name", f'"{name}"', item_id))
+            cursor.execute(
+                "UPDATE itemChild SET name = %s WHERE ID = %s", (name, item_id)
+            )
 
         if description is not None:
             cursor.execute(
-                item_child_query, ("description", f'"{description}"', item_id)
+                "UPDATE itemChild SET description = %s WHERE ID = %s",
+                (description, item_id),
             )
 
         if item_type is not None:
-            cursor.execute(item_child_query, ("type", f'"{item_type}"', item_id))
+            cursor.execute(
+                "UPDATE itemChild SET type = %s WHERE ID = %s", (item_type, item_id)
+            )
 
         if serial is not None:
-            cursor.execute(item_child_query, ("serial", f'"{serial}"', item_id))
+            cursor.execute(
+                "UPDATE itemChild SET serial = %s WHERE ID = %s", (serial, item_id)
+            )
 
         if vendor_name is not None:
             cursor.execute(
-                item_child_query, ("vendorName", f'"{vendor_name}"', item_id)
+                "UPDATE itemChild SET vendorName = %s WHERE ID = %s",
+                (vendor_name, item_id),
             )
 
         if vendor_price is not None and vendor_price != "":
-            cursor.execute(item_child_query, ("vendorPrice", vendor_price, item_id))
+            cursor.execute(
+                "UPDATE itemChild SET vendorPrice = %s WHERE ID = %s",
+                (vendor_price, item_id),
+            )
 
         if purchase_date is not None:
             purchase_date = convert_javascript_date(purchase_date)
             cursor.execute(
-                item_child_query, ("purchaseDate", f'"{purchase_date}"', item_id)
+                "UPDATE itemChild SET purchaseDate = %s WHERE ID = %s",
+                (purchase_date, item_id),
             )
-
-        item_query = """
-            UPDATE item SET %s = %s
-            WHERE ID = (
-                SELECT item from itemChild WHERE ID = %s
-            )
-        """
 
         if barcode is not None:
-            cursor.execute(item_query, ("barcode", f"'{barcode}'", item_id))
+            cursor.execute(
+                """
+                UPDATE item SET barcode = %s
+                WHERE ID = (SELECT item from itemChild WHERE ID = %s)
+                """,
+                (barcode, item_id),
+            )
 
         if available is not None:
-            cursor.execute(item_query, ("available", int(available), item_id))
+            cursor.execute(
+                """
+                UPDATE item SET available = %s
+                WHERE ID = (SELECT item from itemChild WHERE ID = %s)
+                """,
+                (int(available), item_id),
+            )
 
         if moveable is not None:
-            cursor.execute(item_query, ("moveable", int(moveable), item_id))
+            cursor.execute(
+                """
+                UPDATE item SET moveable = %s
+                WHERE ID = (SELECT item from itemChild WHERE ID = %s)
+                """,
+                (int(moveable), item_id),
+            )
 
         if location is not None:
-            cursor.execute(item_query, ("location", f"'{location}'", item_id))
+            cursor.execute(
+                """
+                UPDATE item SET location = %s
+                WHERE ID = (SELECT item from itemChild WHERE ID = %s)
+                """,
+                (location, item_id),
+            )
 
         if quantity is not None:
-            cursor.execute(item_query, ("quantity", quantity, item_id))
+            cursor.execute(
+                """
+                UPDATE item SET quantity = %s
+                WHERE ID = (SELECT item from itemChild WHERE ID = %s)
+                """,
+                (quantity, item_id),
+            )
 
         connection.commit()
     except mysql.connector.errors.Error as err:
