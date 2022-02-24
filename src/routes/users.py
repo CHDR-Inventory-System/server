@@ -13,18 +13,22 @@ import textwrap
 users_blueprint = Blueprint("users", __name__)
 
 
-def create_verification_link(user_id: str, verification_code: str):
-    base_url = (
+def get_base_url():
+    return (
         "http://127.0.0.1:9000" if current_app.debug else "https://chdr.cs.ucf.edu/csi"
     )
 
-    return f"{base_url}/#/verify/?id={user_id}&verificationCode={verification_code}"
+
+def create_verification_link(user_id: str, verification_code: str):
+    return (
+        f"{get_base_url()}/#/verify/?id={user_id}&verificationCode={verification_code}"
+    )
 
 
 def create_verification_email_body(user_id: str, name: str, verification_code: str):
     return textwrap.dedent(
         f"""
-        Hello {name}, to verify your account, please click the following link:
+        Welcome {name}! To verify your account, please click the following link:
         {create_verification_link(user_id, verification_code)}
         """
     )
@@ -368,10 +372,7 @@ def update_user_email(user_id, **kwargs):
         cursor.execute("SELECT * FROM users WHERE ID = %s", (user_id,))
         user = cursor.fetchone()
 
-        if not user:
-            return create_error_response("Invalid credentials", 401)
-
-        if not bcrypt.checkpw(
+        if not user or not bcrypt.checkpw(
             password.encode("utf-8"), user["password"].encode("utf-8")
         ):
             return create_error_response("Invalid credentials", 401)
@@ -414,7 +415,7 @@ def update_user_email(user_id, **kwargs):
 
 @users_blueprint.route("/resendVerificationEmail", methods=["POST"])
 @Database.with_connection
-def resendVerificationEmail(**kwargs):
+def resend_verification_email(**kwargs):
     cursor = kwargs["cursor"]
     post_data = request.get_json()
 
@@ -448,7 +449,96 @@ def resendVerificationEmail(**kwargs):
 
     try:
         Emailer.send_email(email, "Verify Your Email", body)
-        return jsonify({"status": "Success"})
     except SMTPException as err:
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
+
+    return jsonify({"status": "Success"})
+
+
+@users_blueprint.route("/sendPasswordResetEmail", methods=["POST"])
+@Database.with_connection
+def send_password_reset_email(**kwargs):
+    cursor = kwargs["cursor"]
+    post_data = request.get_json()
+
+    try:
+        email = post_data["email"]
+    except KeyError:
+        return create_error_response("Parameter email is required", 500)
+
+    try:
+        cursor.execute(
+            "SELECT ID, verificationCode, fullName FROM users WHERE email = %s",
+            (email,),
+        )
+        user = cursor.fetchone()
+
+        if not user:
+            return create_error_response("Couldn't find a user with this email", 404)
+
+    except mysql.connector.errors.Error as err:
+        current_app.logger.error(str(err))
+        return create_error_response("An unexpected error occurred", 500)
+
+    first_name = user["fullName"].split(" ")[0]
+
+    body = textwrap.dedent(
+        f"""
+        Hello {first_name}, please visit this link to reset your password.
+        If you didn't attempt to change your password, you can ignore this email.
+
+        {get_base_url()}/#/reset-password/?id={user["ID"]}&verificationCode={user["verificationCode"]}
+        """
+    )
+
+    try:
+        Emailer.send_email(email, "Requested Password Reset", body)
+    except SMTPException as err:
+        current_app.logger.error(str(err))
+        return create_error_response("An unexpected error occurred", 500)
+
+    return jsonify({"status": "Success"})
+
+
+@users_blueprint.route("/resetPassword", methods=["POST"])
+@Database.with_connection
+def reset_password(**kwargs):
+    cursor = kwargs["cursor"]
+    connection = kwargs["connection"]
+    post_data = request.get_json()
+
+    if not post_data:
+        return create_error_response("A body is required", 400)
+
+    try:
+        user_id = post_data["userId"]
+        verification_code = post_data["verificationCode"]
+        password = post_data["password"]
+    except KeyError as err:
+        return create_error_response(f"Parameter {err.args[0]} is required", 400)
+
+    try:
+        cursor.execute(
+            "SELECT ID, verificationCode from users WHERE ID = %s", (user_id,)
+        )
+        user = cursor.fetchone()
+
+        if not user or user["verificationCode"] != verification_code:
+            return create_error_response("Invalid credentials", 401)
+
+        hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
+        verification_code = str(uuid.uuid4())
+
+        cursor.execute(
+            "UPDATE users SET password = %s, verificationCode = %s WHERE ID = %s",
+            (hashed_password, verification_code, user_id),
+        )
+
+        connection.commit()
+
+    except mysql.connector.errors.Error as err:
+        current_app.logger.error(str(err))
+        return create_error_response("An unexpected error occurred", 500)
+
+    return jsonify({"status": "Success"})

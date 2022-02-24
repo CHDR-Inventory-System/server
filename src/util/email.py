@@ -11,6 +11,10 @@ class Emailer:
 
     @staticmethod
     def send_email(recipient: str, subject: str, body: str):
+        """
+        Sends an email to the specified recipient.
+        Throws SMTPException on failure
+        """
         message = Message(
             recipients=[recipient],
             subject=subject,
