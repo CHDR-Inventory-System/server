@@ -335,7 +335,7 @@ def update_user_role(user_id, **kwargs):
     if user_role.lower() not in {"user", "super", "admin"}:
         return create_error_response("Role is invalid", 406)
 
-    query = "UPDATE users SET role = '%s' WHERE ID = '%s'"
+    query = "UPDATE users SET role = %s WHERE ID = %s"
 
     try:
         cursor.execute(query, (user_role, user_id))
