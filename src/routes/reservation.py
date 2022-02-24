@@ -8,12 +8,13 @@ from util.request import require_roles
 reservation_blueprint = Blueprint("reservation", __name__)
 
 VALID_RESERVATION_STATUSES = {
-    "pending",
-    "denied",
     "approved",
-    "missed",
+    "cancelled",
     "checked out",
+    "denied",
     "late",
+    "missed",
+    "pending",
     "returned",
 }
 
@@ -34,30 +35,80 @@ def query_reservations(base_query: str, **kwargs):
         # For every reservation, we'll need to replace the item id,
         # user id, and admin id with the actual values in the database
         for reservation in reservations:
-            cursor.execute("SELECT * FROM item WHERE ID = %s" % (reservation["item"],))
+            query = """
+                SELECT
+                    A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+                FROM itemChild AS A
+                LEFT JOIN item AS B on A.item = B.ID
+                WHERE A.item = %(item_id)s
+                UNION
+                SELECT
+                    A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+                FROM itemChild AS A
+                LEFT JOIN item AS B on A.item = B.ID
+                WHERE A.item = %(item_id)s
+            """
+            cursor.execute(query, {"item_id": reservation["item"]})
 
-            reservation["item"] = cursor.fetchone()
-            reservation["item"]["moveable"] = bool(reservation["item"]["moveable"])
-            reservation["item"]["available"] = bool(reservation["item"]["available"])
+            # Replace the reservation's item field with the actual item data
+            # from the database
+            items = cursor.fetchall()
 
+            for item in items:
+                item["moveable"] = bool(item["moveable"])
+                item["available"] = bool(item["available"])
+                item["main"] = bool(item["main"])
+
+                cursor.execute(
+                    "SELECT * from itemImage WHERE itemChild = %s", (item["ID"],)
+                )
+
+                item["images"] = cursor.fetchall()
+
+            main_item = next((item for item in items if bool(item["main"])), None)
+            main_item["children"] = [item for item in items if not bool(item["main"])]
+
+            reservation["item"] = main_item
+
+            # Replace the reservation's user field with the actual user data
+            # from the database
             cursor.execute(
-                "SELECT email, ID, role FROM users WHERE ID = %s"
-                % (reservation["user"],)
+                """
+                SELECT ID, email, verified, role, created, fullName
+                FROM users
+                WHERE ID = %s
+                LIMIT 1
+                """,
+                (reservation["user"],),
             )
 
-            reservation["user"] = cursor.fetchone()
+            user = cursor.fetchone()
+            user["verified"] = bool(user["verified"])
 
+            reservation["user"] = user
+
+            # Replace the reservation's user field with the actual user data from the
+            # database (if there is an admin who has updated this reservation's status)
             if reservation["userAdminID"] is not None:
                 cursor.execute(
                     """
-                    SELECT email, ID, role FROM users
+                    SELECT ID, email, verified, role, created, fullName
+                    FROM users
                     WHERE ID = %s AND (role = 'Admin' OR role = 'Super')
-                    """
-                    % (reservation["userAdminID"],),
+                    LIMIT 1
+                    """,
+                    (reservation["userAdminID"],),
                 )
-                reservation["admin"] = cursor.fetchone()
+                admin = cursor.fetchone()
+                admin["verified"] = bool(admin["verified"])
+
+                reservation["admin"] = admin
             else:
                 reservation["admin"] = None
+
+            # Since this filed can be accesse through the nested admin object,
+            # we no longer need this property
+            del reservation["userAdminID"]
 
         return jsonify(reservations)
     except mysql.connector.Error as err:
@@ -119,27 +170,38 @@ def create_reservation(**kwargs):
     reservation = {}
 
     try:
+        cursor.execute("SELECT ID FROM users WHERE email = '%s'", (post_data["email"],))
+
+        user = cursor.fetchone()
+
+        if not user:
+            return create_error_response("Email not found", 404)
+
+        reservation["user"] = user["ID"]
+
+        # item refers to the ID of the item in the "item" table
         reservation["item"] = post_data["item"]
-        reservation["user"] = post_data["user"]
         reservation["start_date_time"] = convert_javascript_date(
             post_data["startDateTime"]
         )
         reservation["end_date_time"] = convert_javascript_date(post_data["endDateTime"])
+
+        reservation["status"] = post_data.get("status", "Pending")
+
+        if reservation["status"].lower() not in VALID_RESERVATION_STATUSES:
+            return create_error_response("Invalid reservation status", 400)
     except KeyError as err:
         return create_error_response(f"Parameter {err.args[0]} is required", 400)
+    except mysql.connector.Error as err:
+        current_app.logger.exception(str(err))
+        return create_error_response("An unexpected error occurred", 500)
 
     try:
-        cursor.execute("SELECT ID from item WHERE ID = %s" % (reservation["item"],))
+        cursor.execute("SELECT ID from item WHERE ID = %s", (reservation["item"],))
         result = cursor.fetchone()
 
         if result is None:
             return create_error_response("Invalid item ID", 400)
-
-        cursor.execute("SELECT ID from users WHERE ID = %s" % (reservation["user"],))
-        result = cursor.fetchone()
-
-        if result is None:
-            return create_error_response("Invalid user ID", 400)
 
         query = """
             INSERT INTO reservation (item, user, startDateTime, endDateTime, status)
@@ -148,7 +210,7 @@ def create_reservation(**kwargs):
                 %(user)s,
                 %(start_date_time)s,
                 %(end_date_time)s,
-                "Pending"
+                %(status)s
             )
         """
 
@@ -158,7 +220,10 @@ def create_reservation(**kwargs):
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
 
-    return jsonify({"status": "Success"})
+    # Return the newly created reservation
+    return query_reservations(
+        "SELECT * FROM reservation WHERE ID = %s" % (cursor.lastrowid,)
+    )
 
 
 @reservation_blueprint.route("/<int:reservation_id>", methods=["DELETE"])
@@ -168,7 +233,7 @@ def delete_reservation(reservation_id, **kwargs):
     connection = kwargs["connection"]
 
     try:
-        cursor.execute("DELETE FROM reservation WHERE ID = %s" % (reservation_id,))
+        cursor.execute("DELETE FROM reservation WHERE ID = %s", (reservation_id,))
         connection.commit()
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
@@ -195,8 +260,8 @@ def update_status(reservation_id, **kwargs):
 
     try:
         cursor.execute(
-            "UPDATE reservation SET status = '%s' WHERE ID = %s"
-            % (status, reservation_id)
+            "UPDATE reservation SET status = '%s' WHERE ID = %s",
+            (status, reservation_id),
         )
         connection.commit()
     except mysql.connector.Error as err:
