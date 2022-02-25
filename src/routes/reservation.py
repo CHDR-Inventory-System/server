@@ -88,11 +88,12 @@ def query_reservations(base_query: str, variables: dict = {}, as_json=True, **kw
             )
 
             user = cursor.fetchone()
-            user["verified"] = bool(user["verified"])
 
-            reservation["user"] = user
+            if user:
+                user["verified"] = bool(user["verified"])
+                reservation["user"] = user
 
-            # Replace the reservation's user field with the actual user data from the
+            # Replace the reservation's admin field with the actual user data from the
             # database (if there is an admin who has updated this reservation's status)
             if reservation["userAdminID"] is not None:
                 cursor.execute(
@@ -105,9 +106,12 @@ def query_reservations(base_query: str, variables: dict = {}, as_json=True, **kw
                     (reservation["userAdminID"],),
                 )
                 admin = cursor.fetchone()
-                admin["verified"] = bool(admin["verified"])
 
-                reservation["admin"] = admin
+                if admin:
+                    admin["verified"] = bool(admin["verified"])
+                    reservation["admin"] = admin
+                else:
+                    reservation["admin"] = None
             else:
                 reservation["admin"] = None
 
