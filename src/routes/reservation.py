@@ -18,11 +18,12 @@ VALID_RESERVATION_STATUSES = {
 
 
 @Database.with_connection
-def query_reservations(base_query: str, as_json=True, **kwargs):
+def query_reservations(base_query: str, variables: dict = {}, as_json=True, **kwargs):
     """
     A helper function that uses "base_query" to select reservations from
     the reservation table and build a JSON structure that includes the
-    item, user, and admin who approves it
+    item, user, and admin who approves it. Any variables should be
+    passed as a dict to "variables"
 
     If as_json is true, this will cause this function to return a jsonified
     response. Otherwise, it'll return an array of reservations.
@@ -30,7 +31,7 @@ def query_reservations(base_query: str, as_json=True, **kwargs):
     cursor = kwargs["cursor"]
 
     try:
-        cursor.execute(base_query)
+        cursor.execute(base_query, variables)
         reservations = cursor.fetchall()
 
         # For every reservation, we'll need to replace the item id,
@@ -87,11 +88,12 @@ def query_reservations(base_query: str, as_json=True, **kwargs):
             )
 
             user = cursor.fetchone()
-            user["verified"] = bool(user["verified"])
 
-            reservation["user"] = user
+            if user:
+                user["verified"] = bool(user["verified"])
+                reservation["user"] = user
 
-            # Replace the reservation's user field with the actual user data from the
+            # Replace the reservation's admin field with the actual user data from the
             # database (if there is an admin who has updated this reservation's status)
             if reservation["userAdminID"] is not None:
                 cursor.execute(
@@ -104,9 +106,12 @@ def query_reservations(base_query: str, as_json=True, **kwargs):
                     (reservation["userAdminID"],),
                 )
                 admin = cursor.fetchone()
-                admin["verified"] = bool(admin["verified"])
 
-                reservation["admin"] = admin
+                if admin:
+                    admin["verified"] = bool(admin["verified"])
+                    reservation["admin"] = admin
+                else:
+                    reservation["admin"] = None
             else:
                 reservation["admin"] = None
 
@@ -121,35 +126,39 @@ def query_reservations(base_query: str, as_json=True, **kwargs):
 
 
 @reservation_blueprint.route("/", methods=["GET"])
-@Database.with_connection
-def get_all_reservations(**kwargs):
+def get_all_reservations():
     status = request.args.get("status", default="", type=str)
 
     if status:
         return query_reservations(
-            'SELECT * FROM reservation WHERE status = "%s"' % (status,)
+            "SELECT * FROM reservation WHERE status = %(status)s",
+            variables={"status": status},
         )
 
     return query_reservations("SELECT * FROM reservation")
 
 
 @reservation_blueprint.route("/user/<int:user_id>", methods=["GET"])
-@Database.with_connection
-def get_reservations_by_user(user_id, **kwargs):
-    return query_reservations("SELECT * FROM reservation WHERE user = %s" % (user_id,))
+def get_reservations_by_user(user_id):
+    return query_reservations(
+        "SELECT * FROM reservation WHERE user = %(user_id)s",
+        variables={"user_id": user_id},
+    )
 
 
 @reservation_blueprint.route("/item/<int:item_id>", methods=["GET"])
-@Database.with_connection
-def get_reservations_by_item(item_id, **kwargs):
-    return query_reservations("SELECT * FROM reservation WHERE item = %s" % (item_id,))
+def get_reservations_by_item(item_id):
+    return query_reservations(
+        "SELECT * FROM reservation WHERE item = %(item_id)s",
+        variables={"item_id": item_id},
+    )
 
 
 @reservation_blueprint.route("/<int:reservation_id>", methods=["GET"])
-@Database.with_connection
-def get_reservations_by_id(reservation_id, **kwargs):
+def get_reservations_by_id(reservation_id):
     return query_reservations(
-        "SELECT * FROM reservation WHERE ID = %s" % (reservation_id,)
+        "SELECT * FROM reservation WHERE ID = %(reservation_id)s",
+        variables={"reservation_id": reservation_id},
     )
 
 
@@ -162,7 +171,7 @@ def create_reservation(**kwargs):
     reservation = {}
 
     try:
-        cursor.execute("SELECT ID FROM users WHERE email = '%s'", (post_data["email"],))
+        cursor.execute("SELECT ID FROM users WHERE email = %s", (post_data["email"],))
 
         user = cursor.fetchone()
 
@@ -186,7 +195,7 @@ def create_reservation(**kwargs):
 
         if reservation["admin_id"]:
             cursor.execute(
-                "SELECT role FROM users WHERE ID = %s" % (int(reservation["admin_id"]))
+                "SELECT role FROM users WHERE ID = %s", (int(reservation["admin_id"]),)
             )
             admin = cursor.fetchone()
 
@@ -233,7 +242,8 @@ def create_reservation(**kwargs):
 
         # Return the newly created reservation
         reservations = query_reservations(
-            "SELECT * FROM reservation WHERE ID = %s" % (cursor.lastrowid,),
+            "SELECT * FROM reservation WHERE ID = %(row_id)s",
+            variables={"row_id": cursor.lastrowid},
             as_json=False,
         )
 
@@ -282,14 +292,14 @@ def update_status(reservation_id, **kwargs):
 
     try:
         cursor.execute(
-            "UPDATE reservation SET status = '%s' WHERE ID = %s",
+            "UPDATE reservation SET status = %s WHERE ID = %s",
             (status, reservation_id),
         )
 
         if admin_id is not None:
             cursor.execute(
-                "UPDATE reservation SET userAdminID = %s WHERE ID = %s"
-                % (int(admin_id), reservation_id)
+                "UPDATE reservation SET userAdminID = %s WHERE ID = %s",
+                (int(admin_id), reservation_id),
             )
 
         connection.commit()

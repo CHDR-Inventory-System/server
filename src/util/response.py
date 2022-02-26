@@ -20,6 +20,6 @@ def convert_javascript_date(js_date: Union[str, int]):
     if isinstance(js_date, int):
         date = datetime.fromtimestamp(js_date / 1_000)
     else:
-        date = dateutil.parser.parse("February 4th 2022 5:53 PM")
+        date = dateutil.parser.parse(js_date)
 
     return date.strftime("%Y-%m-%d %H:%M:%S")
