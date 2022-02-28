@@ -26,9 +26,11 @@ def create_verification_link(user_id: str, verification_code: str):
 
 
 def create_verification_email_body(user_id: str, name: str, verification_code: str):
+    first_name = name.split(" ")[0]
+
     return textwrap.dedent(
         f"""
-        Welcome {name}! To verify your account, please click the following link:
+        Welcome {first_name}! To verify your account, please click the following link:
         {create_verification_link(user_id, verification_code)}
         """
     )
@@ -108,7 +110,7 @@ def register(**kwargs):
         )
 
         try:
-            Emailer.send_email(email, "Verify Your Email", body)
+            Emailer.send_email(email, "Verify Your Account", body)
         except SMTPException as err:
             current_app.logger.exception(str(err))
 
@@ -353,10 +355,12 @@ def update_user_role(user_id, **kwargs):
 
 @users_blueprint.route("/<int:user_id>/email", methods=["PATCH"])
 @Database.with_connection
-def update_user_email(user_id, **kwargs):
+def send_update_email(user_id, **kwargs):
+    """
+    Handles sending the email that lets a user update their email
+    """
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
-
     request_data = request.get_json()
 
     if not request_data:
@@ -369,7 +373,9 @@ def update_user_email(user_id, **kwargs):
         return create_error_response(f"Parameter {err.args[0]} is required", 400)
 
     try:
-        cursor.execute("SELECT * FROM users WHERE ID = %s", (user_id,))
+        cursor.execute(
+            "SELECT ID, password, fullName FROM users WHERE ID = %s", (user_id,)
+        )
         user = cursor.fetchone()
 
         if not user or not bcrypt.checkpw(
@@ -377,38 +383,36 @@ def update_user_email(user_id, **kwargs):
         ):
             return create_error_response("Invalid credentials", 401)
 
+        # Create a new verification code so that previous links to update
+        # a user's email won't work
         verification_code = str(uuid.uuid4())
 
-        query = """
-            UPDATE users
-            SET email = %s, verificationCode = %s, verified = 0
-            WHERE ID = %s
-        """
-
         cursor.execute(
-            query,
-            (
-                email,
-                verification_code,
-                user_id,
-            ),
+            "UPDATE users SET verificationCode = %s WHERE ID = %s",
+            (verification_code, user_id),
         )
+
         connection.commit()
 
-        body = create_verification_email_body(
-            user_id=user["ID"],
-            name=user["fullName"],
-            verification_code=verification_code,
-        )
-
-        try:
-            Emailer.send_email(email, "Verify Your Email", body)
-        except SMTPException as e:
-            current_app.logger.error(e.message)
-
     except mysql.connection.Error as err:
+        connection.rollback()
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
+
+    first_name = user["fullName"].split(" ")[0]
+    body = textwrap.dedent(
+        f"""
+        Hello {first_name}, please visit the following link to confirm your email.
+        If you didn't request an update, you can ignore this email.
+
+        {get_base_url()}/#/update-email/?id={user["ID"]}&verificationCode={verification_code}
+        """
+    )
+
+    try:
+        Emailer.send_email(email, "Confirm Your Email", body)
+    except SMTPException as e:
+        current_app.logger.error(e.message)
 
     return jsonify({"status": "Success"})
 
@@ -417,6 +421,7 @@ def update_user_email(user_id, **kwargs):
 @Database.with_connection
 def resend_verification_email(**kwargs):
     cursor = kwargs["cursor"]
+    connection = kwargs["connection"]
     post_data = request.get_json()
 
     if not post_data:
@@ -437,18 +442,29 @@ def resend_verification_email(**kwargs):
         if not user:
             return create_error_response("Couldn't find a user with this email", 404)
 
+        # Create a new verification code so that previous links to verify
+        # the user's account won't work
+        verification_code = str(uuid.uuid4())
+
+        cursor.execute(
+            "UPDATE users SET verificationCode = %s WHERE ID = %s",
+            (verification_code, user["ID"]),
+        )
+        connection.commit()
+
     except mysql.connector.errors.Error as err:
+        connection.rollback()
         current_app.logger.error(str(err))
         return create_error_response("An unexpected error occurred", 500)
 
     body = create_verification_email_body(
         user_id=user["ID"],
         name=user["fullName"],
-        verification_code=user["verificationCode"],
+        verification_code=verification_code,
     )
 
     try:
-        Emailer.send_email(email, "Verify Your Email", body)
+        Emailer.send_email(email, "Verify Your Account", body)
     except SMTPException as err:
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
@@ -460,6 +476,7 @@ def resend_verification_email(**kwargs):
 @Database.with_connection
 def send_password_reset_email(**kwargs):
     cursor = kwargs["cursor"]
+    connection = kwargs["connection"]
     post_data = request.get_json()
 
     try:
@@ -477,6 +494,15 @@ def send_password_reset_email(**kwargs):
         if not user:
             return create_error_response("Couldn't find a user with this email", 404)
 
+        # Create a new verification code so that previous links won't work
+        verification_code = str(uuid.uuid4())
+
+        cursor.execute(
+            "UPDATE users SET verificationCode = %s WHERE ID = %s",
+            (verification_code, user["ID"]),
+        )
+        connection.commit()
+
     except mysql.connector.errors.Error as err:
         current_app.logger.error(str(err))
         return create_error_response("An unexpected error occurred", 500)
@@ -485,10 +511,10 @@ def send_password_reset_email(**kwargs):
 
     body = textwrap.dedent(
         f"""
-        Hello {first_name}, please visit this link to reset your password.
-        If you didn't attempt to change your password, you can ignore this email.
+        Hello {first_name}, please visit the following link to reset your password.
+        If you didn't request to change your password, you can ignore this email.
 
-        {get_base_url()}/#/reset-password/?id={user["ID"]}&verificationCode={user["verificationCode"]}
+        {get_base_url()}/#/reset-password/?id={user["ID"]}&verificationCode={verification_code}
         """
     )
 
@@ -528,17 +554,65 @@ def reset_password(**kwargs):
             return create_error_response("Invalid credentials", 401)
 
         hashed_password = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
-        verification_code = str(uuid.uuid4())
 
         cursor.execute(
             "UPDATE users SET password = %s, verificationCode = %s WHERE ID = %s",
-            (hashed_password, verification_code, user_id),
+            (hashed_password, str(uuid.uuid4()), user_id),
         )
 
         connection.commit()
 
     except mysql.connector.errors.Error as err:
         current_app.logger.error(str(err))
+        return create_error_response("An unexpected error occurred", 500)
+
+    return jsonify({"status": "Success"})
+
+
+@users_blueprint.route("/updateEmail", methods=["PATCH"])
+@Database.with_connection
+def update_user_email(**kwargs):
+    cursor = kwargs["cursor"]
+    connection = kwargs["connection"]
+    request_data = request.get_json()
+
+    if not request_data:
+        return create_error_response("A body is required", 400)
+
+    try:
+        email = request_data["email"]
+        password = request_data["password"]
+        verification_code = request_data["verificationCode"]
+        user_id = request_data["userId"]
+    except KeyError as err:
+        return create_error_response(f"Parameter {err.args[0]} is required", 400)
+
+    try:
+        cursor.execute(
+            "SELECT verificationCode, password FROM users WHERE ID = %s", (user_id,)
+        )
+        user = cursor.fetchone()
+
+        if not user or not bcrypt.checkpw(
+            password.encode("utf-8"), user["password"].encode("utf-8")
+        ):
+            return create_error_response("Invalid credentials", 401)
+
+        if user["verificationCode"] != verification_code:
+            return create_error_response("Invalid verification code", 406)
+
+        cursor.execute(
+            "UPDATE users SET verificationCode = %s, email = %s WHERE ID = %s",
+            (str(uuid.uuid4()), email, user_id),
+        )
+
+        connection.commit()
+
+    except mysql.connector.errors.IntegrityError:
+        return create_error_response("This email is in use", 409)
+    except mysql.connector.errors.Error as err:
+        current_app.logger.error(str(err))
+        connection.rollback()
         return create_error_response("An unexpected error occurred", 500)
 
     return jsonify({"status": "Success"})
