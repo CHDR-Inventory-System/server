@@ -368,19 +368,16 @@ def send_update_email(user_id, **kwargs):
 
     try:
         email = request_data["email"]
-        password = request_data["password"]
-    except KeyError as err:
-        return create_error_response(f"Parameter {err.args[0]} is required", 400)
+    except KeyError:
+        return create_error_response("Parameter email is required", 400)
 
     try:
         cursor.execute(
-            "SELECT ID, password, fullName FROM users WHERE ID = %s", (user_id,)
+            "SELECT ID, password, fullName, email FROM users WHERE ID = %s", (user_id,)
         )
         user = cursor.fetchone()
 
-        if not user or not bcrypt.checkpw(
-            password.encode("utf-8"), user["password"].encode("utf-8")
-        ):
+        if not user or email != user["email"]:
             return create_error_response("Invalid credentials", 401)
 
         # Create a new verification code so that previous links to update
