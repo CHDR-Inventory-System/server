@@ -15,7 +15,7 @@ users_blueprint = Blueprint("users", __name__)
 
 def get_base_url():
     return (
-        "http://127.0.0.1:9000" if current_app.debug else "https://chdr.cs.ucf.edu/csi"
+        "http://localhost:9000" if current_app.debug else "https://chdr.cs.ucf.edu/csi"
     )
 
 
@@ -399,7 +399,7 @@ def send_update_email(user_id, **kwargs):
     first_name = user["fullName"].split(" ")[0]
     body = textwrap.dedent(
         f"""
-        Hello {first_name}, please visit the following link to confirm your email.
+        Hello {first_name}, please visit the following link to change your email.
         If you didn't request an update, you can ignore this email.
 
         {get_base_url()}/#/update-email/?id={user["ID"]}&verificationCode={verification_code}
@@ -407,7 +407,7 @@ def send_update_email(user_id, **kwargs):
     )
 
     try:
-        Emailer.send_email(email, "Confirm Your Email", body)
+        Emailer.send_email(email, "Requested Email Change", body)
     except SMTPException as e:
         current_app.logger.error(e.message)
 
