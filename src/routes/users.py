@@ -627,20 +627,19 @@ def update_name(user_id, **kwargs):
 
     try:
         full_name = request_data["fullName"]
-        verification_code = request_data["verificationCode"]
-    except KeyError as err:
-        return create_error_response(f"Parameter {err.args[0]} is required", 400)
+    except KeyError:
+        return create_error_response("Parameter fullName is required", 400)
 
     try:
-        cursor.execute("SELECT verificationCode FROM users WHERE ID = %s", (user_id,))
+        cursor.execute("SELECT ID FROM users WHERE ID = %s", (user_id,))
         user = cursor.fetchone()
 
-        if not user or verification_code != user["verificationCode"]:
+        if not user:
             return create_error_response("Invalid credentials", 401)
 
         cursor.execute(
-            "UPDATE users SET fullName = %s, verificationCode = %s WHERE ID = %s",
-            (full_name.strip(), str(uuid.uuid4()), user_id),
+            "UPDATE users SET fullName = %s WHERE ID = %s",
+            (full_name.strip(), user_id),
         )
         connection.commit()
     except mysql.connector.errors.Error as err:
