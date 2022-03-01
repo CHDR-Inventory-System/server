@@ -199,6 +199,10 @@ def delete_item(item_id, **kwargs):
 def get_item_by_id(item_id):
     try:
         item = query_by_id(item_id)
+
+        if not item:
+            return create_error_response("Item not found", 404)
+
         return jsonify(item)
     except mysql.connector.Error as err:
         current_app.log_exception(str(err))
