@@ -37,7 +37,7 @@ def create_verification_email_body(user_id: str, name: str, verification_code: s
 
 
 @users_blueprint.route("/register", methods=["POST"])
-@Database.with_connection
+@Database.with_connection()
 def register(**kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
@@ -123,7 +123,7 @@ def register(**kwargs):
 
 
 @users_blueprint.route("/verify", methods=["PATCH"])
-@Database.with_connection
+@Database.with_connection()
 def update_verification(**kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
@@ -172,7 +172,7 @@ def update_verification(**kwargs):
 
 
 @users_blueprint.route("/login", methods=["POST"])
-@Database.with_connection
+@Database.with_connection()
 def login(**kwargs):
     cursor = kwargs["cursor"]
 
@@ -228,7 +228,7 @@ def login(**kwargs):
 
 
 @users_blueprint.route("/<int:user_id>", methods=["DELETE"])
-@Database.with_connection
+@Database.with_connection()
 def delete_user(user_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
@@ -273,7 +273,7 @@ def delete_user(user_id, **kwargs):
 
 
 @users_blueprint.route("/<int:user_id>", methods=["GET"])
-@Database.with_connection
+@Database.with_connection()
 def get_user_by_id(user_id, **kwargs):
     cursor = kwargs["cursor"]
 
@@ -299,7 +299,7 @@ def get_user_by_id(user_id, **kwargs):
 
 
 @users_blueprint.route("/", methods=["GET"])
-@Database.with_connection
+@Database.with_connection()
 def get_all_users(**kwargs):
     cursor = kwargs["cursor"]
 
@@ -323,7 +323,7 @@ def get_all_users(**kwargs):
 
 
 @users_blueprint.route("/<int:user_id>/role", methods=["PATCH"])
-@Database.with_connection
+@Database.with_connection()
 def update_user_role(user_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
@@ -354,7 +354,7 @@ def update_user_role(user_id, **kwargs):
 
 
 @users_blueprint.route("/<int:user_id>/email", methods=["PATCH"])
-@Database.with_connection
+@Database.with_connection()
 def send_update_email(user_id, **kwargs):
     """
     Handles sending the email that lets a user update their email
@@ -415,7 +415,7 @@ def send_update_email(user_id, **kwargs):
 
 
 @users_blueprint.route("/resendVerificationEmail", methods=["POST"])
-@Database.with_connection
+@Database.with_connection()
 def resend_verification_email(**kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
@@ -470,7 +470,7 @@ def resend_verification_email(**kwargs):
 
 
 @users_blueprint.route("/sendPasswordResetEmail", methods=["POST"])
-@Database.with_connection
+@Database.with_connection()
 def send_password_reset_email(**kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
@@ -525,7 +525,7 @@ def send_password_reset_email(**kwargs):
 
 
 @users_blueprint.route("/resetPassword", methods=["POST"])
-@Database.with_connection
+@Database.with_connection()
 def reset_password(**kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
@@ -567,7 +567,7 @@ def reset_password(**kwargs):
 
 
 @users_blueprint.route("/updateEmail", methods=["PATCH"])
-@Database.with_connection
+@Database.with_connection()
 def update_user_email(**kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
@@ -616,7 +616,7 @@ def update_user_email(**kwargs):
 
 
 @users_blueprint.route("<int:user_id>/updateName", methods=["PATCH"])
-@Database.with_connection
+@Database.with_connection()
 def update_name(user_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
