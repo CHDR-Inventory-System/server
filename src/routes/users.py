@@ -613,3 +613,39 @@ def update_user_email(**kwargs):
         return create_error_response("An unexpected error occurred", 500)
 
     return jsonify({"status": "Success"})
+
+
+@users_blueprint.route("<int:user_id>/updateName", methods=["PATCH"])
+@Database.with_connection
+def update_name(user_id, **kwargs):
+    cursor = kwargs["cursor"]
+    connection = kwargs["connection"]
+    request_data = request.get_json()
+
+    if not request_data:
+        return create_error_response("A body is required", 400)
+
+    try:
+        full_name = request_data["fullName"]
+        verification_code = request_data["verificationCode"]
+    except KeyError as err:
+        return create_error_response(f"Parameter {err.args[0]} is required", 400)
+
+    try:
+        cursor.execute("SELECT verificationCode FROM users WHERE ID = %s", (user_id,))
+        user = cursor.fetchone()
+
+        if not user or verification_code != user["verificationCode"]:
+            return create_error_response("Invalid credentials", 401)
+
+        cursor.execute(
+            "UPDATE users SET fullName = %s, verificationCode = %s WHERE ID = %s",
+            (full_name.strip(), str(uuid.uuid4()), user_id),
+        )
+        connection.commit()
+    except mysql.connector.errors.Error as err:
+        current_app.logger.error(str(err))
+        connection.rollback()
+        return create_error_response("An unexpected error occurred", 500)
+
+    return jsonify({"status": "Success"})
