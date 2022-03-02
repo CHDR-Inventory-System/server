@@ -227,6 +227,7 @@ def create_reservation(**kwargs):
 
 
 @reservation_blueprint.route("/<int:reservation_id>", methods=["DELETE"])
+@require_roles(["admin", "super"])
 @Database.with_connection
 def delete_reservation(reservation_id, **kwargs):
     cursor = kwargs["cursor"]
@@ -243,12 +244,28 @@ def delete_reservation(reservation_id, **kwargs):
 
 
 @reservation_blueprint.route("/<int:reservation_id>/status", methods=["PUT"])
+@jwt_required()
 @Database.with_connection
 def update_status(reservation_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
 
+    user = get_jwt_identity()
     post_data = request.get_json()
+
+    try:
+        cursor.execute(
+            "SELECT user FROM reservation WHERE ID = '%d'", (reservation_id,)
+        )
+        uid = cursor.fetchone()
+
+        if user["role"].lower() == "user" and user["ID"] != uid["ID"]:
+            return create_error_response(
+                "You don't have permission to view this resource", 403
+            )
+    except mysql.connector.Error as err:
+        current_app.logger.exception(str(err))
+        return create_error_response("An unexpected error occurred", 500)
 
     try:
         status = post_data["status"]
