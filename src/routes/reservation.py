@@ -20,16 +20,20 @@ VALID_RESERVATION_STATUSES = {
 
 
 @Database.with_connection
-def query_reservations(base_query: str, **kwargs):
+def query_reservations(base_query: str, variables: dict = {}, as_json=True, **kwargs):
     """
     A helper function that uses "base_query" to select reservations from
     the reservation table and build a JSON structure that includes the
-    item, user, and admin who approves it
+    item, user, and admin who approves it. Any variables should be
+    passed as a dict to "variables"
+
+    If as_json is true, this will cause this function to return a jsonified
+    response. Otherwise, it'll return an array of reservations.
     """
     cursor = kwargs["cursor"]
 
     try:
-        cursor.execute(base_query)
+        cursor.execute(base_query, variables)
         reservations = cursor.fetchall()
 
         # For every reservation, we'll need to replace the item id,
@@ -37,13 +41,15 @@ def query_reservations(base_query: str, **kwargs):
         for reservation in reservations:
             query = """
                 SELECT
-                    A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+                    A.*, B.barcode, B.available, B.moveable, B.location,
+                    B.quantity, B.retiredDateTime
                 FROM itemChild AS A
                 LEFT JOIN item AS B on A.item = B.ID
                 WHERE A.item = %(item_id)s
                 UNION
                 SELECT
-                    A.*, B.barcode, B.available, B.moveable, B.location, B.quantity
+                    A.*, B.barcode, B.available, B.moveable, B.location,
+                    B.quantity, B.retiredDateTime
                 FROM itemChild AS A
                 LEFT JOIN item AS B on A.item = B.ID
                 WHERE A.item = %(item_id)s
@@ -65,6 +71,7 @@ def query_reservations(base_query: str, **kwargs):
 
                 item["images"] = cursor.fetchall()
 
+            # Using next here to find the first reservation that matches this condition
             main_item = next((item for item in items if bool(item["main"])), None)
             main_item["children"] = [item for item in items if not bool(item["main"])]
 
@@ -83,11 +90,12 @@ def query_reservations(base_query: str, **kwargs):
             )
 
             user = cursor.fetchone()
-            user["verified"] = bool(user["verified"])
 
-            reservation["user"] = user
+            if user:
+                user["verified"] = bool(user["verified"])
+                reservation["user"] = user
 
-            # Replace the reservation's user field with the actual user data from the
+            # Replace the reservation's admin field with the actual user data from the
             # database (if there is an admin who has updated this reservation's status)
             if reservation["userAdminID"] is not None:
                 cursor.execute(
@@ -100,9 +108,12 @@ def query_reservations(base_query: str, **kwargs):
                     (reservation["userAdminID"],),
                 )
                 admin = cursor.fetchone()
-                admin["verified"] = bool(admin["verified"])
 
-                reservation["admin"] = admin
+                if admin:
+                    admin["verified"] = bool(admin["verified"])
+                    reservation["admin"] = admin
+                else:
+                    reservation["admin"] = None
             else:
                 reservation["admin"] = None
 
@@ -110,7 +121,7 @@ def query_reservations(base_query: str, **kwargs):
             # we no longer need this property
             del reservation["userAdminID"]
 
-        return jsonify(reservations)
+        return jsonify(reservations) if as_json else reservations
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
     return create_error_response("An unexpected error occurred", 500)
@@ -124,7 +135,8 @@ def get_all_reservations(**kwargs):
 
     if status:
         return query_reservations(
-            'SELECT * FROM reservation WHERE status = "%s"' % (status,)
+            "SELECT * FROM reservation WHERE status = %(status)s",
+            variables={"status": status},
         )
 
     return query_reservations("SELECT * FROM reservation")
@@ -157,7 +169,8 @@ def get_reservations_by_item(item_id, **kwargs):
 @Database.with_connection
 def get_reservations_by_id(reservation_id, **kwargs):
     return query_reservations(
-        "SELECT * FROM reservation WHERE ID = %s" % (reservation_id,)
+        "SELECT * FROM reservation WHERE ID = %(reservation_id)s",
+        variables={"reservation_id": reservation_id},
     )
 
 
@@ -170,7 +183,7 @@ def create_reservation(**kwargs):
     reservation = {}
 
     try:
-        cursor.execute("SELECT ID FROM users WHERE email = '%s'", (post_data["email"],))
+        cursor.execute("SELECT ID FROM users WHERE email = %s", (post_data["email"],))
 
         user = cursor.fetchone()
 
@@ -187,9 +200,23 @@ def create_reservation(**kwargs):
         reservation["end_date_time"] = convert_javascript_date(post_data["endDateTime"])
 
         reservation["status"] = post_data.get("status", "Pending")
+        reservation["admin_id"] = post_data.get("adminId", None)
 
         if reservation["status"].lower() not in VALID_RESERVATION_STATUSES:
             return create_error_response("Invalid reservation status", 400)
+
+        if reservation["admin_id"]:
+            cursor.execute(
+                "SELECT role FROM users WHERE ID = %s", (int(reservation["admin_id"]),)
+            )
+            admin = cursor.fetchone()
+
+            if not admin:
+                return create_error_response("No admin with this ID", 404)
+
+            if admin["role"].lower() not in {"admin", "super"}:
+                return create_error_response("Insufficient permissions", 401)
+
     except KeyError as err:
         return create_error_response(f"Parameter {err.args[0]} is required", 400)
     except mysql.connector.Error as err:
@@ -204,26 +231,38 @@ def create_reservation(**kwargs):
             return create_error_response("Invalid item ID", 400)
 
         query = """
-            INSERT INTO reservation (item, user, startDateTime, endDateTime, status)
+            INSERT INTO reservation (
+                item,
+                user,
+                startDateTime,
+                endDateTime,
+                status,
+                userAdminID
+            )
             VALUES (
                 %(item)s,
                 %(user)s,
                 %(start_date_time)s,
                 %(end_date_time)s,
-                %(status)s
+                %(status)s,
+                %(admin_id)s
             )
         """
 
         cursor.execute(query, reservation)
         connection.commit()
+
+        # Return the newly created reservation
+        reservations = query_reservations(
+            "SELECT * FROM reservation WHERE ID = %(row_id)s",
+            variables={"row_id": cursor.lastrowid},
+            as_json=False,
+        )
+
+        return reservations[0]
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
-
-    # Return the newly created reservation
-    return query_reservations(
-        "SELECT * FROM reservation WHERE ID = %s" % (cursor.lastrowid,)
-    )
 
 
 @reservation_blueprint.route("/<int:reservation_id>", methods=["DELETE"])
@@ -253,6 +292,11 @@ def update_status(reservation_id, **kwargs):
     user = get_jwt_identity()
     post_data = request.get_json()
 
+    if not post_data:
+        return create_error_response("A body is required", 400)
+
+    admin_id = post_data.get("adminId")
+
     try:
         cursor.execute(
             "SELECT user FROM reservation WHERE ID = '%d'", (reservation_id,)
@@ -277,9 +321,16 @@ def update_status(reservation_id, **kwargs):
 
     try:
         cursor.execute(
-            "UPDATE reservation SET status = '%s' WHERE ID = %s",
+            "UPDATE reservation SET status = %s WHERE ID = %s",
             (status, reservation_id),
         )
+
+        if admin_id is not None:
+            cursor.execute(
+                "UPDATE reservation SET userAdminID = %s WHERE ID = %s",
+                (int(admin_id), reservation_id),
+            )
+
         connection.commit()
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
