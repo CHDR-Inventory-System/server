@@ -14,7 +14,7 @@ inventory_blueprint = Blueprint("inventory", __name__)
 VALID_IMAGE_EXTENSIONS = {"jpg", "png", "jpeg"}
 
 
-@Database.with_connection
+@Database.with_connection()
 def query_by_id(item_id, **kwargs):
     cursor = kwargs["cursor"]
 
@@ -82,7 +82,7 @@ def query_by_id(item_id, **kwargs):
 
 
 @inventory_blueprint.route("/", methods=["GET"])
-@Database.with_connection
+@Database.with_connection()
 def get_all(**kwargs):
     cursor = kwargs["cursor"]
 
@@ -141,7 +141,7 @@ def get_all(**kwargs):
 
 
 @inventory_blueprint.route("/<int:item_id>", methods=["DELETE"])
-@Database.with_connection
+@Database.with_connection()
 def delete_item(item_id, **kwargs):
     """
     NOTE: Here, "item_id" refers to the ID in the "itemChild" table
@@ -199,6 +199,10 @@ def delete_item(item_id, **kwargs):
 def get_item_by_id(item_id):
     try:
         item = query_by_id(item_id)
+
+        if not item:
+            return create_error_response("Item not found", 404)
+
         return jsonify(item)
     except mysql.connector.Error as err:
         current_app.log_exception(str(err))
@@ -206,7 +210,7 @@ def get_item_by_id(item_id):
 
 
 @inventory_blueprint.route("/search", methods=["GET"])
-@Database.with_connection
+@Database.with_connection()
 def get_item_by_name(**kwargs):
     cursor = kwargs["cursor"]
     query = """
@@ -273,7 +277,7 @@ def get_item_by_name(**kwargs):
 
 
 @inventory_blueprint.route("/barcode/<barcode>", methods=["GET"])
-@Database.with_connection
+@Database.with_connection()
 def get_item_by_barcode(barcode, **kwargs):
     cursor = kwargs["cursor"]
     query = """
@@ -321,7 +325,7 @@ def get_item_by_barcode(barcode, **kwargs):
 
 
 @inventory_blueprint.route("/<int:item_id>/uploadImage", methods=["POST"])
-@Database.with_connection
+@Database.with_connection()
 def upload_image(item_id, **kwargs):
     """
     This route can receive either a JavaScript FormData object with the key
@@ -400,7 +404,7 @@ def upload_image(item_id, **kwargs):
 
 
 @inventory_blueprint.route("/image/<int:image_id>", methods=["DELETE"])
-@Database.with_connection
+@Database.with_connection()
 def delete_image(image_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
@@ -429,7 +433,7 @@ def delete_image(image_id, **kwargs):
 
 
 @inventory_blueprint.route("/add", methods=["POST"])
-@Database.with_connection
+@Database.with_connection()
 def add_item(**kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
@@ -530,7 +534,7 @@ def add_item(**kwargs):
 
 
 @inventory_blueprint.route("/<int:item_id>/addChild", methods=["POST"])
-@Database.with_connection
+@Database.with_connection()
 def add_child_item(item_id, **kwargs):
     """
     NOTE: Here, 'item_id' refers to the ID of the item in the item table
@@ -596,7 +600,7 @@ def add_child_item(item_id, **kwargs):
 
 
 @inventory_blueprint.route("/<int:item_id>", methods=["PUT"])
-@Database.with_connection
+@Database.with_connection()
 def update_item(item_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
@@ -718,7 +722,7 @@ def update_item(item_id, **kwargs):
 
 
 @inventory_blueprint.route("/<int:item_id>/retire", methods=["PUT"])
-@Database.with_connection
+@Database.with_connection()
 def retire_item(item_id, **kwargs):
     """
     Handles retiring an item. This route takes "date" as a parameter. If
