@@ -18,7 +18,7 @@ VALID_IMAGE_EXTENSIONS = {"jpg", "png", "jpeg"}
 def query_by_id(item_id, **kwargs):
     cursor = kwargs["cursor"]
 
-    cursor.execute("SELECT * from itemImage WHERE itemChild = %s" % (item_id,))
+    cursor.execute("SELECT * from itemImage WHERE itemChild = %s", (item_id,))
     images = cursor.fetchone()
 
     query = """
@@ -68,7 +68,7 @@ def query_by_id(item_id, **kwargs):
 
         for child in children:
             cursor.execute(
-                "SELECT * FROM itemImage WHERE itemChild = %s" % (child["ID"],)
+                "SELECT * FROM itemImage WHERE itemChild = %s", (child["ID"],)
             )
 
             child["images"] = cursor.fetchall()
@@ -143,6 +143,9 @@ def get_all(**kwargs):
 @inventory_blueprint.route("/<int:item_id>", methods=["DELETE"])
 @Database.with_connection
 def delete_item(item_id, **kwargs):
+    """
+    NOTE: Here, "item_id" refers to the ID in the "itemChild" table
+    """
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
 
@@ -151,19 +154,11 @@ def delete_item(item_id, **kwargs):
     # If this step fails for some reason, we can still try to delete the item
     # from the database
     try:
-        cursor.execute("SELECT item, main FROM itemChild WHERE ID = %s" % (item_id,))
+        cursor.execute("SELECT item, main FROM itemChild WHERE ID = %s", (item_id,))
 
         item = cursor.fetchone()
 
         if item["main"]:
-            cursor.execute("SELECT ID FROM itemChild WHERE item = %s" % (item["item"],))
-            all_item_ids = [str(row["ID"]) for row in cursor.fetchall()]
-
-            cursor.execute(
-                "SELECT imagePath from itemImage WHERE itemChild IN (%s)"
-                % ",".join(all_item_ids)
-            )
-
             image_paths = [row["imagePath"] for row in cursor.fetchall()]
 
             for image_path in image_paths:
@@ -176,17 +171,20 @@ def delete_item(item_id, **kwargs):
         current_app.logger.exception(str(err))
 
     try:
-        cursor.execute("SELECT item, main FROM itemChild WHERE ID = %s" % (item_id,))
-
+        cursor.execute("SELECT item, main FROM itemChild WHERE ID = %s", (item_id,))
         item = cursor.fetchone()
 
-        # If this is the main item, we also need to delete its associated children
+        if not item:
+            return create_error_response("Item not found", 404)
+
+        # If this is the main item, we'll just delete the base item from the item table
         if item["main"]:
             cursor.execute(
-                "DELETE FROM itemChild WHERE item = %s AND main = 0" % (item["item"])
+                "DELETE FROM item WHERE ID = %s",
+                (item["item"],),
             )
-
-        cursor.execute("DELETE FROM itemChild WHERE ID = %s" % (item_id,))
+        else:
+            cursor.execute("DELETE FROM itemChild WHERE ID = %s", (item_id,))
 
         connection.commit()
     except mysql.connector.Error as err:
@@ -236,9 +234,7 @@ def get_item_by_name(**kwargs):
             row["moveable"] = bool(row["moveable"])
             row["main"] = bool(row["main"])
 
-            cursor.execute(
-                "SELECT * FROM itemImage WHERE itemChild = %s" % (row["ID"],)
-            )
+            cursor.execute("SELECT * FROM itemImage WHERE itemChild = %s", (row["ID"],))
             row["images"] = cursor.fetchall()
 
             query = """
@@ -264,7 +260,7 @@ def get_item_by_name(**kwargs):
                 child["available"] = bool(child["available"])
 
                 cursor.execute(
-                    "SELECT * FROM itemImage WHERE itemChild = %s" % (child["ID"],)
+                    "SELECT * FROM itemImage WHERE itemChild = %s", (child["ID"],)
                 )
                 child["images"] = cursor.fetchall()
 
@@ -307,9 +303,7 @@ def get_item_by_barcode(barcode, **kwargs):
         child_items = [item for item in all_items if not bool(item["main"])]
 
         for row in child_items + [main_item]:
-            cursor.execute(
-                "SELECT * FROM itemImage WHERE itemChild = %s" % (row["ID"],)
-            )
+            cursor.execute("SELECT * FROM itemImage WHERE itemChild = %s", (row["ID"],))
             row["images"] = cursor.fetchall()
             row["children"] = []
             row["available"] = bool(row["available"])
@@ -337,6 +331,7 @@ def upload_image(item_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
     post_data = request.get_json() or {}
+    image = None
 
     try:
         # Check to see if we received a FormData object
@@ -345,22 +340,23 @@ def upload_image(item_id, **kwargs):
         # No form data was passed so check the request body instead
         pass
 
-    try:
-        # We didn't get a FormData object so encode the base64 image as a
-        # byte stream and save it
-        filename = post_data["filename"]
-        content_type = "image/png" if filename.endswith("png") else "image/jpeg"
-        file_data = BytesIO(base64.b64decode(post_data["image"]))
+    # We didn't get a FormData object so encode the base64 image as a
+    # byte stream and save it
+    if not image:
+        try:
+            filename = post_data["filename"]
+            content_type = "image/png" if filename.endswith("png") else "image/jpeg"
+            file_data = BytesIO(base64.b64decode(post_data["image"]))
 
-        image = FileStorage(
-            stream=file_data,
-            filename=filename,
-            content_type=content_type,
-        )
-    except KeyError:
-        return create_error_response("An image is required", 400)
-    except Exception:
-        return create_error_response("An unexpected error occurred", 500)
+            image = FileStorage(
+                stream=file_data,
+                filename=filename,
+                content_type=content_type,
+            )
+        except KeyError:
+            return create_error_response("An image is required", 400)
+        except Exception:
+            return create_error_response("An unexpected error occurred", 500)
 
     # Make sure we only received images with valid extensions
     if image.filename.split(".")[-1] not in VALID_IMAGE_EXTENSIONS:
@@ -379,14 +375,22 @@ def upload_image(item_id, **kwargs):
             INSERT INTO itemImage (itemChild, imagePath, imageURL)
             VALUES ("%s", "%s", "%s")
         """
-        cursor.execute(query % (item_id, image_path, image_url))
+        cursor.execute(query, (item_id, image_path, image_url))
 
         image.save(image_path)
         compress_image(image_path)
 
         connection.commit()
 
-        return jsonify({"imageID": cursor.lastrowid})
+        cursor.execute(
+            """
+            SELECT ID, created, imagePath, imageURL, itemChild
+            FROM itemImage WHERE ID = %s
+            """,
+            (cursor.lastrowid,),
+        )
+
+        return jsonify(cursor.fetchone())
     except Exception as err:
         current_app.logger.exception(str(err))
         connection.rollback()
@@ -402,14 +406,14 @@ def delete_image(image_id, **kwargs):
     connection = kwargs["connection"]
 
     try:
-        cursor.execute("SELECT imagePath FROM itemImage WHERE ID = %s" % (image_id,))
+        cursor.execute("SELECT imagePath FROM itemImage WHERE ID = %s", (image_id,))
 
         file = cursor.fetchone()
 
         if not file:
             return create_error_response("Image not found", 404)
 
-        cursor.execute("DELETE FROM itemImage WHERE ID = %s" % (image_id,))
+        cursor.execute("DELETE FROM itemImage WHERE ID = %s", (image_id,))
         connection.commit()
     except mysql.connector.errors.Error as err:
         connection.rollback()
@@ -624,31 +628,31 @@ def update_item(item_id, **kwargs):
         # Because some of these values are strings while some are numbers, the string
         # values will need to be surrounded with quotes
         if name is not None:
-            cursor.execute(item_child_query % ("name", f'"{name}"', item_id))
+            cursor.execute(item_child_query, ("name", f'"{name}"', item_id))
 
         if description is not None:
             cursor.execute(
-                item_child_query % ("description", f'"{description}"', item_id)
+                item_child_query, ("description", f'"{description}"', item_id)
             )
 
         if item_type is not None:
-            cursor.execute(item_child_query % ("type", f'"{item_type}"', item_id))
+            cursor.execute(item_child_query, ("type", f'"{item_type}"', item_id))
 
         if serial is not None:
-            cursor.execute(item_child_query % ("serial", f'"{serial}"', item_id))
+            cursor.execute(item_child_query, ("serial", f'"{serial}"', item_id))
 
         if vendor_name is not None:
             cursor.execute(
-                item_child_query % ("vendorName", f'"{vendor_name}"', item_id)
+                item_child_query, ("vendorName", f'"{vendor_name}"', item_id)
             )
 
         if vendor_price is not None and vendor_price != "":
-            cursor.execute(item_child_query % ("vendorPrice", vendor_price, item_id))
+            cursor.execute(item_child_query, ("vendorPrice", vendor_price, item_id))
 
         if purchase_date is not None:
             purchase_date = convert_javascript_date(purchase_date)
             cursor.execute(
-                item_child_query % ("purchaseDate", f'"{purchase_date}"', item_id)
+                item_child_query, ("purchaseDate", f'"{purchase_date}"', item_id)
             )
 
         item_query = """
@@ -659,19 +663,19 @@ def update_item(item_id, **kwargs):
         """
 
         if barcode is not None:
-            cursor.execute(item_query % ("barcode", f"'{barcode}'", item_id))
+            cursor.execute(item_query, ("barcode", f"'{barcode}'", item_id))
 
         if available is not None:
-            cursor.execute(item_query % ("available", int(available), item_id))
+            cursor.execute(item_query, ("available", int(available), item_id))
 
         if moveable is not None:
-            cursor.execute(item_query % ("moveable", int(moveable), item_id))
+            cursor.execute(item_query, ("moveable", int(moveable), item_id))
 
         if location is not None:
-            cursor.execute(item_query % ("location", f"'{location}'", item_id))
+            cursor.execute(item_query, ("location", f"'{location}'", item_id))
 
         if quantity is not None:
-            cursor.execute(item_query % ("quantity", quantity, item_id))
+            cursor.execute(item_query, ("quantity", quantity, item_id))
 
         connection.commit()
     except mysql.connector.errors.Error as err:
@@ -703,7 +707,7 @@ def retire_item(item_id, **kwargs):
         return create_error_response("Parameter date is required", 400)
 
     try:
-        cursor.execute("SELECT item FROM itemChild WHERE ID = %s" % (item_id,))
+        cursor.execute("SELECT item FROM itemChild WHERE ID = %s", (item_id,))
 
         item = cursor.fetchone()
 
