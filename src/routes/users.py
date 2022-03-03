@@ -377,6 +377,9 @@ def send_update_email(user_id, **kwargs):
         )
         user = cursor.fetchone()
 
+        # Check to make sure the current email of the user making the request matches
+        # the email in the DB. This is to make sure other users can't update a different
+        # user's email address
         if not user or email != user["email"]:
             return create_error_response("Invalid credentials", 401)
 
