@@ -205,7 +205,7 @@ def login(**kwargs):
                 identity={
                     "ID": user["ID"],
                     "role": user["role"],
-                    "verified": user["verified"],
+                    "verified": bool(user["verified"]),
                 }
             )
 
