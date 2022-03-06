@@ -19,7 +19,7 @@ def query_by_id(item_id, **kwargs):
     cursor = kwargs["cursor"]
 
     cursor.execute("SELECT * from itemImage WHERE itemChild = %s", (item_id,))
-    images = cursor.fetchone()
+    images = cursor.fetchall()
 
     query = """
         SELECT
