@@ -321,4 +321,14 @@ def update_status(reservation_id, **kwargs):
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
 
-    return jsonify({"status": "Success"})
+    updated_reservations = query_reservations(
+        "SELECT * FROM reservation WHERE ID = %(row_id)s",
+        variables={"row_id": reservation_id},
+        as_json=False,
+    )
+
+    # Safety check: this length of "updated_reservations" should always be 1
+    if len(updated_reservations) == 0:
+        return create_error_response("An unexpected error occurred", 500)
+
+    return jsonify(updated_reservations[0])
