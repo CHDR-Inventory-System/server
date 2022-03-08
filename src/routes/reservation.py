@@ -281,6 +281,8 @@ def update_status(reservation_id, **kwargs):
         return create_error_response("A body is required", 400)
 
     admin_id = post_data.get("adminId")
+    start_date_time = post_data.get("startDateTime")
+    end_date_time = post_data.get("endDateTime")
 
     try:
         status = post_data["status"]
@@ -300,6 +302,18 @@ def update_status(reservation_id, **kwargs):
             cursor.execute(
                 "UPDATE reservation SET userAdminID = %s WHERE ID = %s",
                 (int(admin_id), reservation_id),
+            )
+
+        if start_date_time is not None:
+            cursor.execute(
+                "UPDATE reservation SET startDateTime = %s WHERE ID = %s",
+                (convert_javascript_date(start_date_time), reservation_id),
+            )
+
+        if end_date_time is not None:
+            cursor.execute(
+                "UPDATE reservation SET endDateTime = %s WHERE ID = %s",
+                (convert_javascript_date(end_date_time), reservation_id),
             )
 
         connection.commit()
