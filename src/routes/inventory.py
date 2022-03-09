@@ -159,6 +159,9 @@ def delete_item(item_id, **kwargs):
         item = cursor.fetchone()
 
         if item["main"]:
+            cursor.execute(
+                "SELECT imagePath from itemImage WHERE itemChild = %s", (item_id,)
+            )
             image_paths = [row["imagePath"] for row in cursor.fetchall()]
 
             for image_path in image_paths:
