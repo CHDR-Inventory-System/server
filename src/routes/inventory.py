@@ -403,6 +403,7 @@ def upload_image(item_id, **kwargs):
 
 
 @inventory_blueprint.route("/image/<int:image_id>", methods=["DELETE"])
+@require_roles(["admin", "super"])
 @Database.with_connection
 def delete_image(image_id, **kwargs):
     cursor = kwargs["cursor"]
@@ -534,6 +535,7 @@ def add_item(**kwargs):
 
 
 @inventory_blueprint.route("/<int:item_id>/addChild", methods=["POST"])
+@require_roles(["admin", "super"])
 @Database.with_connection
 def add_child_item(item_id, **kwargs):
     """
@@ -723,6 +725,7 @@ def update_item(item_id, **kwargs):
 
 
 @inventory_blueprint.route("/<int:item_id>/retire", methods=["PUT"])
+@require_roles(["admin", "super"])
 @Database.with_connection
 def retire_item(item_id, **kwargs):
     """

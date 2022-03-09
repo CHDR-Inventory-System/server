@@ -2,6 +2,8 @@ from smtplib import SMTPException
 from flask import Blueprint, jsonify, request, current_app
 from util.database import Database
 from util.response import create_error_response
+from util.request import require_roles
+from flask_jwt_extended import jwt_required, get_jwt_identity
 from flask_jwt_extended import create_access_token
 from util.email import Emailer
 import re
@@ -226,11 +228,13 @@ def login(**kwargs):
 
 
 @users_blueprint.route("/<int:user_id>", methods=["DELETE"])
+@jwt_required()
 @Database.with_connection
 def delete_user(user_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
 
+    jwt_user = get_jwt_identity()
     incoming_data = request.get_json()
 
     if not incoming_data:
@@ -256,6 +260,11 @@ def delete_user(user_id, **kwargs):
         ):
             return create_error_response("Invalid credentials", 401)
 
+        if jwt_user["role"].lower() == "user" and jwt_user["ID"] != user_id:
+            return create_error_response(
+                "You don't have permission to view this resource", 403
+            )
+
         # sql query to delete user if it exists already
         query = "DELETE FROM users WHERE ID = %s"
 
@@ -271,6 +280,7 @@ def delete_user(user_id, **kwargs):
 
 
 @users_blueprint.route("/<int:user_id>", methods=["GET"])
+@require_roles(["admin", "super"])
 @Database.with_connection
 def get_user_by_id(user_id, **kwargs):
     cursor = kwargs["cursor"]
@@ -297,6 +307,7 @@ def get_user_by_id(user_id, **kwargs):
 
 
 @users_blueprint.route("/", methods=["GET"])
+@require_roles(["admin", "super"])
 @Database.with_connection
 def get_all_users(**kwargs):
     cursor = kwargs["cursor"]
@@ -321,6 +332,7 @@ def get_all_users(**kwargs):
 
 
 @users_blueprint.route("/<int:user_id>/role", methods=["PATCH"])
+@require_roles(["admin", "super"])
 @Database.with_connection
 def update_user_role(user_id, **kwargs):
     cursor = kwargs["cursor"]
@@ -352,15 +364,22 @@ def update_user_role(user_id, **kwargs):
 
 
 @users_blueprint.route("/<int:user_id>/email", methods=["PATCH"])
+@jwt_required()
 @Database.with_connection
 def update_user_email(user_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
 
+    jwt_user = get_jwt_identity()
     request_data = request.get_json()
 
     if not request_data:
         return create_error_response("A body is required", 400)
+
+    if jwt_user["role"].lower() == "user" and jwt_user["ID"] != user_id:
+        return create_error_response(
+            "You don't have permission to view this resource", 403
+        )
 
     try:
         email = request_data["email"]
