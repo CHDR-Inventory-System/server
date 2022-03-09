@@ -193,6 +193,8 @@ def create_reservation(**kwargs):
         if reservation["status"].lower() not in VALID_RESERVATION_STATUSES:
             return create_error_response("Invalid reservation status", 400)
 
+        # If the ID of the admin was given, we need to make sure that ID
+        # refers to a valid user and that the user is an admin or super user
         if reservation["admin_id"]:
             cursor.execute(
                 "SELECT role FROM users WHERE ID = %s", (int(reservation["admin_id"]),)
@@ -217,6 +219,18 @@ def create_reservation(**kwargs):
 
         if result is None:
             return create_error_response("Invalid item ID", 400)
+
+        cursor.execute(
+            "SELECT status FROM reservation WHERE user = %s", (reservation["user"],)
+        )
+
+        reservations = cursor.fetchall()
+
+        for res in reservations:
+            if res["status"].lower() in {"approved", "checked out", "late", "pending"}:
+                return create_error_response(
+                    "You already have a reservation for this item", 409
+                )
 
         query = """
             INSERT INTO reservation (
