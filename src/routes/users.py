@@ -334,7 +334,7 @@ def get_all_users(**kwargs):
 
 
 @users_blueprint.route("/<int:user_id>/role", methods=["PATCH"])
-@require_roles(["admin", "super"])
+@require_roles(["super"])
 @Database.with_connection()
 def update_user_role(user_id, **kwargs):
     cursor = kwargs["cursor"]
