@@ -639,14 +639,21 @@ def update_user_email(**kwargs):
 
 
 @users_blueprint.route("<int:user_id>/updateName", methods=["PATCH"])
+@jwt_required()
 @Database.with_connection()
 def update_name(user_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
     request_data = request.get_json()
+    jwt_user = get_jwt_identity()
 
     if not request_data:
         return create_error_response("A body is required", 400)
+
+    if jwt_user["role"].lower() == "user" and jwt_user["ID"] != user_id:
+        return create_error_response(
+            "You don't have permission to view this resource", 403
+        )
 
     try:
         full_name = request_data["fullName"]

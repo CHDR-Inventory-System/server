@@ -129,7 +129,7 @@ def query_reservations(base_query: str, variables: dict = {}, as_json=True, **kw
 
 @reservation_blueprint.route("/", methods=["GET"])
 @require_roles(["admin", "super"])
-@Database.with_connection
+@Database.with_connection()
 def get_all_reservations(**kwargs):
     status = request.args.get("status", default="", type=str)
 
@@ -144,7 +144,7 @@ def get_all_reservations(**kwargs):
 
 @reservation_blueprint.route("/user/<int:user_id>", methods=["GET"])
 @jwt_required()
-@Database.with_connection
+@Database.with_connection()
 def get_reservations_by_user(user_id, **kwargs):
     user = get_jwt_identity()
 
@@ -159,14 +159,14 @@ def get_reservations_by_user(user_id, **kwargs):
 
 @reservation_blueprint.route("/item/<int:item_id>", methods=["GET"])
 @require_roles(["admin", "super"])
-@Database.with_connection
+@Database.with_connection()
 def get_reservations_by_item(item_id, **kwargs):
     return query_reservations("SELECT * FROM reservation WHERE item = %s" % (item_id,))
 
 
 @reservation_blueprint.route("/<int:reservation_id>", methods=["GET"])
 @require_roles(["admin", "super"])
-@Database.with_connection
+@Database.with_connection()
 def get_reservations_by_id(reservation_id, **kwargs):
     return query_reservations(
         "SELECT * FROM reservation WHERE ID = %(reservation_id)s",
