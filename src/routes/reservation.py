@@ -307,6 +307,14 @@ def update_status(reservation_id, **kwargs):
             return create_error_response(
                 "You don't have permission to view this resource", 403
             )
+
+        if (
+            user["role"].lower() == "user"
+            and user["ID"] == uid["ID"]
+            and post_data["status"].lower() != "cancelled"
+        ):
+            return create_error_response("Invailid reservation status", 400)
+
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
