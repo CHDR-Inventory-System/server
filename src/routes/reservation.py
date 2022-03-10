@@ -175,7 +175,6 @@ def get_reservations_by_id(reservation_id, **kwargs):
 
 
 @reservation_blueprint.route("/", methods=["POST"])
-@require_roles(["admin", "super"])
 @Database.with_connection()
 def create_reservation(**kwargs):
     cursor = kwargs["cursor"]
