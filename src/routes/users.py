@@ -368,7 +368,7 @@ def update_user_role(user_id, **kwargs):
 @users_blueprint.route("/<int:user_id>/email", methods=["PATCH"])
 @jwt_required()
 @Database.with_connection()
-def update_user_email(user_id, **kwargs):
+def send_update_email(user_id, **kwargs):
     """
     Handles sending the email that lets a user update their email
     """
