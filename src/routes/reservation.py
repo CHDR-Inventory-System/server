@@ -221,7 +221,11 @@ def create_reservation(**kwargs):
             return create_error_response("Invalid item ID", 400)
 
         cursor.execute(
-            "SELECT status FROM reservation WHERE user = %s", (reservation["user"],)
+            """
+            SELECT status FROM reservation WHERE user = %(user)s
+            AND item = %(item)s
+            """,
+            reservation,
         )
 
         reservations = cursor.fetchall()
