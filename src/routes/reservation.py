@@ -19,7 +19,7 @@ VALID_RESERVATION_STATUSES = {
 }
 
 
-@Database.with_connection
+@Database.with_connection()
 def query_reservations(base_query: str, variables: dict = {}, as_json=True, **kwargs):
     """
     A helper function that uses "base_query" to select reservations from
@@ -176,7 +176,7 @@ def get_reservations_by_id(reservation_id, **kwargs):
 
 @reservation_blueprint.route("/", methods=["POST"])
 @require_roles(["admin", "super"])
-@Database.with_connection
+@Database.with_connection()
 def create_reservation(**kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
@@ -268,7 +268,7 @@ def create_reservation(**kwargs):
 
 @reservation_blueprint.route("/<int:reservation_id>", methods=["DELETE"])
 @require_roles(["admin", "super"])
-@Database.with_connection
+@Database.with_connection()
 def delete_reservation(reservation_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
@@ -283,9 +283,9 @@ def delete_reservation(reservation_id, **kwargs):
     return jsonify({"status": "Success"})
 
 
-@reservation_blueprint.route("/<int:reservation_id>/status", methods=["PUT"])
+@reservation_blueprint.route("/<int:reservation_id>/status", methods=["PATCH"])
 @jwt_required()
-@Database.with_connection
+@Database.with_connection()
 def update_status(reservation_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]

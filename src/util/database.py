@@ -23,7 +23,7 @@ class Database:
     """
 
     @staticmethod
-    def with_connection(func):
+    def with_connection(buffered=False, dictionary=True):
         """
         A decorator that passess a connection and cursor from the connection pool
         to the function in its kwargs. Functions that use this don't need to worry
@@ -31,17 +31,20 @@ class Database:
         this decorator.
         """
 
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            try:
-                connection = _connection_pool.get_connection()
-                cursor = connection.cursor(dictionary=True)
-                return func(*args, cursor=cursor, connection=connection, **kwargs)
-            except mysql.connector.Error as err:
-                current_app.logger.exception(str(err))
-                connection.rollback()
-            finally:
-                cursor.close()
-                connection.close()
+        def decorator(func):
+            @functools.wraps(func)
+            def wrapper(*args, **kwargs):
+                try:
+                    connection = _connection_pool.get_connection()
+                    cursor = connection.cursor(dictionary=dictionary, buffered=buffered)
+                    return func(*args, cursor=cursor, connection=connection, **kwargs)
+                except mysql.connector.Error as err:
+                    current_app.logger.exception(str(err))
+                    connection.rollback()
+                finally:
+                    cursor.close()
+                    connection.close()
 
-        return wrapper
+            return wrapper
+
+        return decorator
