@@ -2,6 +2,7 @@ import mysql.connector
 import os
 from io import BytesIO
 from flask import Blueprint, jsonify, current_app, request
+from flask_jwt_extended import jwt_required
 from util.database import Database
 from util.response import create_error_response, convert_javascript_date
 from util.request import require_roles
@@ -83,6 +84,7 @@ def query_by_id(item_id, **kwargs):
 
 
 @inventory_blueprint.route("/", methods=["GET"])
+@jwt_required()
 @Database.with_connection()
 def get_all(**kwargs):
     cursor = kwargs["cursor"]
@@ -198,6 +200,7 @@ def delete_item(item_id, **kwargs):
 
 
 @inventory_blueprint.route("/<int:item_id>", methods=["GET"])
+@jwt_required()
 def get_item_by_id(item_id):
     try:
         item = query_by_id(item_id)
@@ -212,6 +215,7 @@ def get_item_by_id(item_id):
 
 
 @inventory_blueprint.route("/search", methods=["GET"])
+@jwt_required()
 @Database.with_connection()
 def get_item_by_name(**kwargs):
     cursor = kwargs["cursor"]
@@ -279,6 +283,7 @@ def get_item_by_name(**kwargs):
 
 
 @inventory_blueprint.route("/barcode/<barcode>", methods=["GET"])
+@jwt_required()
 @Database.with_connection()
 def get_item_by_barcode(barcode, **kwargs):
     cursor = kwargs["cursor"]
