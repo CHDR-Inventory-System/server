@@ -20,14 +20,14 @@ VALID_RESERVATION_STATUSES = {
 
 
 @Database.with_connection()
-def query_reservations(base_query: str, variables: dict = {}, as_json=True, **kwargs):
+def query_reservations(base_query: str, variables: dict = {}, jsonify=True, **kwargs):
     """
     A helper function that uses "base_query" to select reservations from
     the reservation table and build a JSON structure that includes the
     item, user, and admin who approves it. Any variables should be
     passed as a dict to "variables"
 
-    If as_json is true, this will cause this function to return a jsonified
+    If jsonify is true, this will cause this function to return a jsonified
     response. Otherwise, it'll return an array of reservations.
     """
     cursor = kwargs["cursor"]
@@ -121,7 +121,7 @@ def query_reservations(base_query: str, variables: dict = {}, as_json=True, **kw
             # we no longer need this property
             del reservation["userAdminID"]
 
-        return jsonify(reservations) if as_json else reservations
+        return jsonify(reservations) if jsonify else reservations
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
     return create_error_response("An unexpected error occurred", 500)
@@ -154,14 +154,32 @@ def get_reservations_by_user(user_id, **kwargs):
             "You don't have permission to view this resource", 403
         )
 
-    return query_reservations("SELECT * FROM reservation WHERE user = %s" % (user_id,))
+    return query_reservations(
+        "SELECT * FROM reservation WHERE user = %(user_id)s",
+        variables={"user_id": user_id},
+    )
 
 
 @reservation_blueprint.route("/item/<int:item_id>", methods=["GET"])
-@require_roles(["admin", "super"])
+@jwt_required()
 @Database.with_connection()
 def get_reservations_by_item(item_id, **kwargs):
-    return query_reservations("SELECT * FROM reservation WHERE item = %s" % (item_id,))
+    jwt_user = get_jwt_identity()
+
+    reservations = query_reservations(
+        "SELECT * FROM reservation WHERE item = %(item_id)s",
+        variables={"item_id": item_id},
+        jsonify=False,
+    )
+
+    # Prevent normal users from viewing the user and admin associated
+    # with a reservation. That information should only be available to admins
+    if jwt_user["role"].lower() == "user":
+        for reservation in reservations:
+            del reservation["user"]
+            del reservation["admin"]
+
+    return jsonify(reservations)
 
 
 @reservation_blueprint.route("/<int:reservation_id>", methods=["GET"])
@@ -274,7 +292,7 @@ def create_reservation(**kwargs):
         reservations = query_reservations(
             "SELECT * FROM reservation WHERE ID = %(row_id)s",
             variables={"row_id": cursor.lastrowid},
-            as_json=False,
+            jsonify=False,
         )
 
         return reservations[0]
@@ -343,7 +361,7 @@ def update_status(reservation_id, **kwargs):
         and jwt_user["ID"] == uid["user"]
         and status.lower() != "cancelled"
     ):
-        return create_error_response("Invailid reservation status", 400)
+        return create_error_response("Invalid reservation status", 400)
 
     try:
         cursor.execute(
@@ -377,7 +395,7 @@ def update_status(reservation_id, **kwargs):
     updated_reservations = query_reservations(
         "SELECT * FROM reservation WHERE ID = %(row_id)s",
         variables={"row_id": reservation_id},
-        as_json=False,
+        jsonify=False,
     )
 
     # Safety check: this length of "updated_reservations" should always be 1
