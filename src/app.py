@@ -18,6 +18,8 @@ app.config["MAIL_USERNAME"] = secrets["EMAIL_USERNAME"]
 app.config["MAIL_PASSWORD"] = secrets["EMAIL_PASSWORD"]
 app.config["MAIL_USE_SSL"] = secrets["EMAIL_USE_SSL"]
 app.config["MAIL_USE_TLS"] = secrets["EMAIL_USE_TLS"]
+app.config["JWT_SECRET_KEY"] = secrets["JWT_SECRET_KEY"]
+app.config["JWT_ERROR_MESSAGE_KEY"] = "error"
 
 CORS(app)
 JWTManager(app)
