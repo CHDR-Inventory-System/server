@@ -1,7 +1,9 @@
 import mysql.connector
 from util.database import Database
 from flask import Blueprint, current_app, jsonify, request
+from flask_jwt_extended import jwt_required, get_jwt_identity
 from util.response import create_error_response, convert_javascript_date
+from util.request import require_roles
 
 reservation_blueprint = Blueprint("reservation", __name__)
 
@@ -126,7 +128,9 @@ def query_reservations(base_query: str, variables: dict = {}, as_json=True, **kw
 
 
 @reservation_blueprint.route("/", methods=["GET"])
-def get_all_reservations():
+@require_roles(["admin", "super"])
+@Database.with_connection()
+def get_all_reservations(**kwargs):
     status = request.args.get("status", default="", type=str)
 
     if status:
@@ -139,23 +143,31 @@ def get_all_reservations():
 
 
 @reservation_blueprint.route("/user/<int:user_id>", methods=["GET"])
-def get_reservations_by_user(user_id):
-    return query_reservations(
-        "SELECT * FROM reservation WHERE user = %(user_id)s",
-        variables={"user_id": user_id},
-    )
+@jwt_required()
+@Database.with_connection()
+def get_reservations_by_user(user_id, **kwargs):
+    user = get_jwt_identity()
+
+    # Prevent users from looking at reservations that aren't their own
+    if user["role"].lower() == "user" and user["ID"] != user_id:
+        return create_error_response(
+            "You don't have permission to view this resource", 403
+        )
+
+    return query_reservations("SELECT * FROM reservation WHERE user = %s" % (user_id,))
 
 
 @reservation_blueprint.route("/item/<int:item_id>", methods=["GET"])
-def get_reservations_by_item(item_id):
-    return query_reservations(
-        "SELECT * FROM reservation WHERE item = %(item_id)s",
-        variables={"item_id": item_id},
-    )
+@require_roles(["admin", "super"])
+@Database.with_connection()
+def get_reservations_by_item(item_id, **kwargs):
+    return query_reservations("SELECT * FROM reservation WHERE item = %s" % (item_id,))
 
 
 @reservation_blueprint.route("/<int:reservation_id>", methods=["GET"])
-def get_reservations_by_id(reservation_id):
+@require_roles(["admin", "super"])
+@Database.with_connection()
+def get_reservations_by_id(reservation_id, **kwargs):
     return query_reservations(
         "SELECT * FROM reservation WHERE ID = %(reservation_id)s",
         variables={"reservation_id": reservation_id},
@@ -272,6 +284,7 @@ def create_reservation(**kwargs):
 
 
 @reservation_blueprint.route("/<int:reservation_id>", methods=["DELETE"])
+@require_roles(["admin", "super"])
 @Database.with_connection()
 def delete_reservation(reservation_id, **kwargs):
     cursor = kwargs["cursor"]
@@ -288,11 +301,13 @@ def delete_reservation(reservation_id, **kwargs):
 
 
 @reservation_blueprint.route("/<int:reservation_id>/status", methods=["PATCH"])
+@jwt_required()
 @Database.with_connection()
 def update_status(reservation_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
 
+    jwt_user = get_jwt_identity()
     post_data = request.get_json()
 
     if not post_data:
@@ -303,12 +318,32 @@ def update_status(reservation_id, **kwargs):
     end_date_time = post_data.get("endDateTime")
 
     try:
+        cursor.execute("SELECT user FROM reservation WHERE ID = %s", (reservation_id,))
+        uid = cursor.fetchone()
+
+        if jwt_user["role"].lower() == "user" and jwt_user["ID"] != uid["user"]:
+            return create_error_response(
+                "You don't have permission to view this resource", 403
+            )
+
+    except mysql.connector.Error as err:
+        current_app.logger.exception(str(err))
+        return create_error_response("An unexpected error occurred", 500)
+
+    try:
         status = post_data["status"]
     except KeyError:
         return create_error_response("A status is required", 400)
 
     if status.lower() not in VALID_RESERVATION_STATUSES:
         return create_error_response("Invalid reservation status", 400)
+
+    if (
+        jwt_user["role"].lower() == "user"
+        and jwt_user["ID"] == uid["user"]
+        and status.lower() != "cancelled"
+    ):
+        return create_error_response("Invailid reservation status", 400)
 
     try:
         cursor.execute(
