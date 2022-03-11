@@ -298,7 +298,9 @@ def update_status(reservation_id, **kwargs):
     admin_id = post_data.get("adminId")
 
     try:
-        cursor.execute("SELECT user FROM reservation WHERE ID = %d", (reservation_id,))
+        cursor.execute(
+            "SELECT user FROM reservation WHERE ID = '%d'", (reservation_id,)
+        )
         uid = cursor.fetchone()
 
         if user["role"].lower() == "user" and user["ID"] != uid["ID"]:
