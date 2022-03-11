@@ -289,7 +289,7 @@ def update_status(reservation_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
 
-    user = get_jwt_identity()
+    jwt_user = get_jwt_identity()
     post_data = request.get_json()
 
     if not post_data:
@@ -301,17 +301,10 @@ def update_status(reservation_id, **kwargs):
         cursor.execute("SELECT user FROM reservation WHERE ID = %s", (reservation_id,))
         uid = cursor.fetchone()
 
-        if user["role"].lower() == "user" and user["ID"] != uid["ID"]:
+        if jwt_user["role"].lower() == "user" and jwt_user["ID"] != uid["user"]:
             return create_error_response(
                 "You don't have permission to view this resource", 403
             )
-
-        if (
-            user["role"].lower() == "user"
-            and user["ID"] == uid["ID"]
-            and post_data["status"].lower() != "cancelled"
-        ):
-            return create_error_response("Invailid reservation status", 400)
 
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
@@ -324,6 +317,13 @@ def update_status(reservation_id, **kwargs):
 
     if status.lower() not in VALID_RESERVATION_STATUSES:
         return create_error_response("Invalid reservation status", 400)
+
+    if (
+        jwt_user["role"].lower() == "user"
+        and jwt_user["ID"] == uid["user"]
+        and status.lower() != "cancelled"
+    ):
+        return create_error_response("Invailid reservation status", 400)
 
     try:
         cursor.execute(
