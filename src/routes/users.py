@@ -3,8 +3,12 @@ from flask import Blueprint, jsonify, request, current_app
 from util.database import Database
 from util.response import create_error_response
 from util.request import require_roles
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from flask_jwt_extended import create_access_token
+from flask_jwt_extended import (
+    jwt_required,
+    get_jwt_identity,
+    create_access_token,
+    set_access_cookies,
+)
 from util.email import Emailer
 import re
 import mysql.connector
@@ -211,7 +215,7 @@ def login(**kwargs):
                 }
             )
 
-            return jsonify(
+            response = jsonify(
                 {
                     "ID": user["ID"],
                     "created": user["created"],
@@ -222,6 +226,10 @@ def login(**kwargs):
                     "token": token,
                 }
             )
+
+            set_access_cookies(response, token)
+
+            return response
 
         return create_error_response("Invalid credentials", 401)
     except Exception as err:

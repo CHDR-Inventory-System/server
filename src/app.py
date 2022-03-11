@@ -8,6 +8,13 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from util.config import secrets
 from util.email import Emailer
+from flask_jwt_extended import (
+    get_jwt,
+    set_access_cookies,
+    create_access_token,
+    get_jwt_identity,
+)
+from datetime import datetime, timedelta, timezone
 
 app = Flask(__name__)
 app.config["IMAGE_FOLDER"] = secrets["IMAGE_UPLOAD_FOLDER"]
@@ -20,6 +27,8 @@ app.config["MAIL_USE_SSL"] = secrets["EMAIL_USE_SSL"]
 app.config["MAIL_USE_TLS"] = secrets["EMAIL_USE_TLS"]
 app.config["JWT_SECRET_KEY"] = secrets["JWT_SECRET_KEY"]
 app.config["JWT_ERROR_MESSAGE_KEY"] = "error"
+app.config["JWT_TOKEN_LOCATION"] = ["cookies"]
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=1)
 
 CORS(app)
 JWTManager(app)
@@ -32,6 +41,29 @@ app.logger.setLevel(gunicorn_logger.level)
 app.register_blueprint(users_blueprint, url_prefix="/api/users")
 app.register_blueprint(reservation_blueprint, url_prefix="/api/reservations")
 app.register_blueprint(inventory_blueprint, url_prefix="/api/inventory")
+
+
+@app.after_request
+def refresh_jwt(response):
+    """
+    If the JWT is close to it's expiration time, create a new one
+    """
+    try:
+        jwt = get_jwt()
+        now = datetime.now(timezone.utc)
+        target_timestamp = datetime.timestamp(now + timedelta(minutes=30))
+
+        if target_timestamp > jwt["exp"]:
+            access_token = create_access_token(identity=get_jwt_identity())
+            set_access_cookies(response, access_token)
+
+    except (RuntimeError, KeyError):
+        # Case where there is not a valid JWT. Just return the original respone
+        pass
+    except Exception as err:
+        app.logger.error(str(err))
+
+    return response
 
 
 if __name__ == "__main__":
