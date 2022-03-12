@@ -54,6 +54,12 @@ def refresh_jwt(response):
     create a new one. If a JWT is already present in the request, this method
     also sets a cookie that hold the JWT's expiration time.
     """
+
+    if request.path == "/api/refreshToken":
+        # Don't generate a new JWT if the user already requested
+        # to refresh the old one
+        return response
+
     try:
         jwt = get_jwt()
         now = datetime.now(timezone.utc)
