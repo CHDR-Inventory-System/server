@@ -89,7 +89,7 @@ def refresh_jwt(response):
         return response
 
 
-@app.route("/refreshToken", methods=["GET"])
+@app.route("/api/refreshToken", methods=["GET"])
 @jwt_required()
 def create_new_token():
     """
