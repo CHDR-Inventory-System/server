@@ -1,7 +1,15 @@
 import mysql.connector
 from util.database import Database
+from datetime import datetime
 from flask import Blueprint, current_app, jsonify, request
 from util.response import create_error_response, convert_javascript_date
+from util.email import Emailer
+from smtplib import SMTPException
+import textwrap
+from flask_apscheduler import APScheduler
+from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_MISSED
+import background_tasks.debug
+from util.config import secrets
 
 reservation_blueprint = Blueprint("reservation", __name__)
 
@@ -17,6 +25,123 @@ VALID_RESERVATION_STATUSES = {
 }
 
 
+def create_alert_email_body(name: str, days: int):
+    days = abs(days)
+    return textwrap.dedent(
+        f"""
+        Hello {name}, we would like to advice you that your rervation or will be due {days} days
+        """
+    )
+
+
+@Database.with_connection()
+def retrieve_user_credentials(id: int, **kwargs):
+    creds = []
+    cursor = kwargs["cursor"]
+
+    cursor.execute("SELECT * FROM users WHERE ID = %s", (id,))
+
+    user = cursor.fetchone()
+    email = user["email"]
+    name = user["fullName"]
+
+    creds = [email, name]
+
+    return creds
+
+
+@reservation_blueprint.route("/here", methods=["GET"])
+@Database.with_connection()
+def due_date_iterator(**kwargs):
+    cursor = kwargs["cursor"]
+    connection = kwargs["connection"]
+    return "here"
+
+    cursor.execute("SELECT user, endDateTime, item from reservation")
+    dates = cursor.fetchall()
+
+    td = datetime.now()
+
+    for row in dates:
+
+        delta = row["endDateTime"] - td
+        print(delta)
+        print("user:", (row["user"]))
+        item_ID = row["item"]
+        cursor.execute("SELECT * FROM item WHERE ID = %s", (item_ID,))
+        item = cursor.fetchone()
+        item_moveable = item["moveable"]
+        print("item moveable", item_moveable)
+
+        id = row["user"]
+
+        if item_moveable == 1:
+            print("im in 1")
+            if delta.days == 1:
+                print("Only at 1 days can I can i be printed")
+                text = retrieve_user_credentials(id)
+                print(text[0])
+                email = text[0]
+                name = text[1]
+                body = create_alert_email_body(
+                    name,
+                    delta.days,
+                )
+            elif delta.days == 2:
+                print("Only at 2 days can I can i be printed")
+                text = retrieve_user_credentials(id)
+                print(text[0])
+                email = text[0]
+                name = text[1]
+                body = create_alert_email_body(
+                    name,
+                    delta.days,
+                )
+            elif delta.days == -4:
+                print("Only at 4 days can I can i be printed")
+                text = retrieve_user_credentials(id)
+                print(text[0])
+                email = text[0]
+                name = text[1]
+                body = create_alert_email_body(
+                    name,
+                    delta.days,
+                )
+
+                try:
+                    Emailer.send_email(email, "Items Due", body)
+                except SMTPException as err:
+                    current_app.logger.exception(str(err))
+                    return "here2"
+
+    return "here"
+
+
+"""
+def init_scheduler():
+    scheduler = APScheduler()
+    #scheduler.init_app(app)
+    #scheduler.add_listener(lambda event: on_job_missed(app, event), EVENT_JOB_MISSED)
+
+    # flake8: noqa: E501
+    # For a list a parameters you can pass to the scheduler when adding a job, see:
+    # https://apscheduler.readthedocs.io/en/3.x/modules/schedulers/base.html#apscheduler.schedulers.base.BaseScheduler.add_job
+    scheduler.add_job(
+        func= due_date_iterator(),
+        id="tick",
+        name="tick",
+        trigger="interval",
+        seconds=60,
+        max_instances=1,
+    )
+
+    if secrets["SCHEDULER_ENABLED"]:
+        #app.logger.info("Scheduler initialized")
+        scheduler.start() 
+
+"""
+
+
 @Database.with_connection()
 def query_reservations(base_query: str, variables: dict = {}, as_json=True, **kwargs):
     """
@@ -24,7 +149,6 @@ def query_reservations(base_query: str, variables: dict = {}, as_json=True, **kw
     the reservation table and build a JSON structure that includes the
     item, user, and admin who approves it. Any variables should be
     passed as a dict to "variables"
-
     If as_json is true, this will cause this function to return a jsonified
     response. Otherwise, it'll return an array of reservations.
     """
