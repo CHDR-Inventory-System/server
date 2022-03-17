@@ -3,7 +3,7 @@ from routes.users import users_blueprint
 from routes.reservation import reservation_blueprint
 from routes.inventory import inventory_blueprint
 import logging
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from util.config import secrets
@@ -47,7 +47,7 @@ app.register_blueprint(inventory_blueprint, url_prefix="/api/inventory")
 
 
 @app.after_request
-def refresh_jwt(response):
+def refresh_jwt(response: Response) -> Response:
     """
     If the JWT is close to it's expiration time (one hour before it expires),
     create a new one. If a JWT is already present in the request, this method

@@ -174,6 +174,8 @@ def delete_item(item_id, **kwargs):
                 except (IsADirectoryError, FileNotFoundError) as err:
                     current_app.logger.exception(str(err))
 
+            cursor.execute("DELETE FROM reservation WHERE item = %s", (item["item"],))
+
     except Exception as err:
         current_app.logger.exception(str(err))
 
