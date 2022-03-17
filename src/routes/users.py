@@ -3,8 +3,14 @@ from flask import Blueprint, jsonify, request, current_app
 from util.database import Database
 from util.response import create_error_response
 from util.request import require_roles
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from flask_jwt_extended import create_access_token
+from flask_jwt_extended import (
+    jwt_required,
+    get_jwt_identity,
+    create_access_token,
+    set_access_cookies,
+    decode_token,
+    unset_jwt_cookies,
+)
 from util.email import Emailer
 import re
 import mysql.connector
@@ -22,9 +28,7 @@ def get_base_url():
 
 
 def create_verification_link(user_id: str, verification_code: str):
-    return (
-        f"{get_base_url()}/#/verify/?id={user_id}&verificationCode={verification_code}"
-    )
+    return f"{get_base_url()}/#/verify/{user_id}/{verification_code}"
 
 
 def create_verification_email_body(user_id: str, name: str, verification_code: str):
@@ -207,11 +211,11 @@ def login(**kwargs):
                 identity={
                     "ID": user["ID"],
                     "role": user["role"],
-                    "verified": user["verified"],
+                    "verified": bool(user["verified"]),
                 }
             )
 
-            return jsonify(
+            response = jsonify(
                 {
                     "ID": user["ID"],
                     "created": user["created"],
@@ -223,10 +227,26 @@ def login(**kwargs):
                 }
             )
 
+            jwt = decode_token(token)
+
+            set_access_cookies(response, token)
+            response.set_cookie(
+                "session_exp", value=str(jwt["exp"]), expires=jwt["exp"]
+            )
+
+            return response
+
         return create_error_response("Invalid credentials", 401)
     except Exception as err:
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
+
+
+@users_blueprint.route("/logout", methods=["POST"])
+def logout():
+    response = jsonify({"status": "Success"})
+    unset_jwt_cookies(response)
+    return response
 
 
 @users_blueprint.route("/<int:user_id>", methods=["DELETE"])
@@ -425,7 +445,7 @@ def send_update_email(user_id, **kwargs):
         Hello {first_name}, please visit the following link to change your email.
         If you didn't request an update, you can ignore this email.
 
-        {get_base_url()}/#/update-email/?id={user["ID"]}&verificationCode={verification_code}
+        {get_base_url()}/#/update-email/{user["ID"]}/{verification_code}
         """
     )
 
@@ -534,7 +554,7 @@ def send_password_reset_email(**kwargs):
         Hello {first_name}, please visit the following link to reset your password.
         If you didn't request to change your password, you can ignore this email.
 
-        {get_base_url()}/#/reset-password/?id={user["ID"]}&verificationCode={verification_code}
+        {get_base_url()}/#/reset-password/{user["ID"]}/{verification_code}
         """
     )
 

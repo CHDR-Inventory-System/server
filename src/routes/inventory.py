@@ -21,7 +21,7 @@ def query_by_id(item_id, **kwargs):
     cursor = kwargs["cursor"]
 
     cursor.execute("SELECT * from itemImage WHERE itemChild = %s", (item_id,))
-    images = cursor.fetchone()
+    images = cursor.fetchall()
 
     query = """
         SELECT
@@ -163,6 +163,9 @@ def delete_item(item_id, **kwargs):
         item = cursor.fetchone()
 
         if item["main"]:
+            cursor.execute(
+                "SELECT imagePath from itemImage WHERE itemChild = %s", (item_id,)
+            )
             image_paths = [row["imagePath"] for row in cursor.fetchall()]
 
             for image_path in image_paths:
@@ -170,6 +173,8 @@ def delete_item(item_id, **kwargs):
                     os.remove(image_path)
                 except (IsADirectoryError, FileNotFoundError) as err:
                     current_app.logger.exception(str(err))
+
+            cursor.execute("DELETE FROM reservation WHERE item = %s", (item["item"],))
 
     except Exception as err:
         current_app.logger.exception(str(err))

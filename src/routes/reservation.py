@@ -20,14 +20,16 @@ VALID_RESERVATION_STATUSES = {
 
 
 @Database.with_connection()
-def query_reservations(base_query: str, variables: dict = {}, as_json=True, **kwargs):
+def query_reservations(
+    base_query: str, variables: dict = {}, use_jsonify=True, **kwargs
+):
     """
     A helper function that uses "base_query" to select reservations from
     the reservation table and build a JSON structure that includes the
     item, user, and admin who approves it. Any variables should be
     passed as a dict to "variables"
 
-    If as_json is true, this will cause this function to return a jsonified
+    If use_jsonify is true, this will cause this function to return a jsonified
     response. Otherwise, it'll return an array of reservations.
     """
     cursor = kwargs["cursor"]
@@ -121,7 +123,7 @@ def query_reservations(base_query: str, variables: dict = {}, as_json=True, **kw
             # we no longer need this property
             del reservation["userAdminID"]
 
-        return jsonify(reservations) if as_json else reservations
+        return jsonify(reservations) if use_jsonify else reservations
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
     return create_error_response("An unexpected error occurred", 500)
@@ -129,8 +131,7 @@ def query_reservations(base_query: str, variables: dict = {}, as_json=True, **kw
 
 @reservation_blueprint.route("/", methods=["GET"])
 @require_roles(["admin", "super"])
-@Database.with_connection()
-def get_all_reservations(**kwargs):
+def get_all_reservations():
     status = request.args.get("status", default="", type=str)
 
     if status:
@@ -144,8 +145,7 @@ def get_all_reservations(**kwargs):
 
 @reservation_blueprint.route("/user/<int:user_id>", methods=["GET"])
 @jwt_required()
-@Database.with_connection()
-def get_reservations_by_user(user_id, **kwargs):
+def get_reservations_by_user(user_id):
     user = get_jwt_identity()
 
     # Prevent users from looking at reservations that aren't their own
@@ -154,20 +154,36 @@ def get_reservations_by_user(user_id, **kwargs):
             "You don't have permission to view this resource", 403
         )
 
-    return query_reservations("SELECT * FROM reservation WHERE user = %s" % (user_id,))
+    return query_reservations(
+        "SELECT * FROM reservation WHERE user = %(user_id)s",
+        variables={"user_id": user_id},
+    )
 
 
 @reservation_blueprint.route("/item/<int:item_id>", methods=["GET"])
-@require_roles(["admin", "super"])
-@Database.with_connection()
-def get_reservations_by_item(item_id, **kwargs):
-    return query_reservations("SELECT * FROM reservation WHERE item = %s" % (item_id,))
+@jwt_required()
+def get_reservations_by_item(item_id):
+    jwt_user = get_jwt_identity()
+
+    reservations = query_reservations(
+        "SELECT * FROM reservation WHERE item = %(item_id)s",
+        variables={"item_id": item_id},
+        use_jsonify=False,
+    )
+
+    # Prevent normal users from viewing the user and admin associated
+    # with a reservation. That information should only be available to admins
+    if jwt_user["role"].lower() == "user":
+        for reservation in reservations:
+            del reservation["user"]
+            del reservation["admin"]
+
+    return jsonify(reservations)
 
 
 @reservation_blueprint.route("/<int:reservation_id>", methods=["GET"])
 @require_roles(["admin", "super"])
-@Database.with_connection()
-def get_reservations_by_id(reservation_id, **kwargs):
+def get_reservations_by_id(reservation_id):
     return query_reservations(
         "SELECT * FROM reservation WHERE ID = %(reservation_id)s",
         variables={"reservation_id": reservation_id},
@@ -205,6 +221,8 @@ def create_reservation(**kwargs):
         if reservation["status"].lower() not in VALID_RESERVATION_STATUSES:
             return create_error_response("Invalid reservation status", 400)
 
+        # If the ID of the admin was given, we need to make sure that ID
+        # refers to a valid user and that the user is an admin or super user
         if reservation["admin_id"]:
             cursor.execute(
                 "SELECT role FROM users WHERE ID = %s", (int(reservation["admin_id"]),)
@@ -229,6 +247,22 @@ def create_reservation(**kwargs):
 
         if result is None:
             return create_error_response("Invalid item ID", 400)
+
+        cursor.execute(
+            """
+            SELECT status FROM reservation WHERE user = %(user)s
+            AND item = %(item)s
+            """,
+            reservation,
+        )
+
+        reservations = cursor.fetchall()
+
+        for res in reservations:
+            if res["status"].lower() in {"approved", "checked out", "late", "pending"}:
+                return create_error_response(
+                    "You already have a reservation for this item", 409
+                )
 
         query = """
             INSERT INTO reservation (
@@ -256,7 +290,7 @@ def create_reservation(**kwargs):
         reservations = query_reservations(
             "SELECT * FROM reservation WHERE ID = %(row_id)s",
             variables={"row_id": cursor.lastrowid},
-            as_json=False,
+            use_jsonify=False,
         )
 
         return reservations[0]
@@ -296,6 +330,8 @@ def update_status(reservation_id, **kwargs):
         return create_error_response("A body is required", 400)
 
     admin_id = post_data.get("adminId")
+    start_date_time = post_data.get("startDateTime")
+    end_date_time = post_data.get("endDateTime")
 
     try:
         cursor.execute("SELECT user FROM reservation WHERE ID = %s", (reservation_id,))
@@ -323,7 +359,7 @@ def update_status(reservation_id, **kwargs):
         and jwt_user["ID"] == uid["user"]
         and status.lower() != "cancelled"
     ):
-        return create_error_response("Invailid reservation status", 400)
+        return create_error_response("Invalid reservation status", 400)
 
     try:
         cursor.execute(
@@ -337,9 +373,31 @@ def update_status(reservation_id, **kwargs):
                 (int(admin_id), reservation_id),
             )
 
+        if start_date_time is not None:
+            cursor.execute(
+                "UPDATE reservation SET startDateTime = %s WHERE ID = %s",
+                (convert_javascript_date(start_date_time), reservation_id),
+            )
+
+        if end_date_time is not None:
+            cursor.execute(
+                "UPDATE reservation SET endDateTime = %s WHERE ID = %s",
+                (convert_javascript_date(end_date_time), reservation_id),
+            )
+
         connection.commit()
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
 
-    return jsonify({"status": "Success"})
+    updated_reservations = query_reservations(
+        "SELECT * FROM reservation WHERE ID = %(row_id)s",
+        variables={"row_id": reservation_id},
+        use_jsonify=False,
+    )
+
+    # Safety check: this length of "updated_reservations" should always be 1
+    if len(updated_reservations) == 0:
+        return create_error_response("An unexpected error occurred", 500)
+
+    return jsonify(updated_reservations[0])
