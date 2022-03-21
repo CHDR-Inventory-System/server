@@ -341,7 +341,22 @@ def update_status(reservation_id, **kwargs):
             return create_error_response(
                 "You don't have permission to view this resource", 403
             )
+    except mysql.connector.Error as err:
+        current_app.logger.exception(str(err))
+        return create_error_response("An unexpected error occurred", 500)
 
+    try:
+        cursor.execute(
+            "SELECT status FROM reservation WHERE ID = %s", (reservation_id,)
+        )
+        curr_status = cursor.fetchone()
+    except mysql.connector.Error as err:
+        current_app.logger.exception(str(err))
+        return create_error_response("An unexpected error occurred", 500)
+
+    try:
+        cursor.execute("SELECT item FROM reservation WHERE ID = %s", (reservation_id,))
+        item_id = cursor.fetchone()
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
@@ -383,6 +398,16 @@ def update_status(reservation_id, **kwargs):
             cursor.execute(
                 "UPDATE reservation SET endDateTime = %s WHERE ID = %s",
                 (convert_javascript_date(end_date_time), reservation_id),
+            )
+
+        if (
+            (jwt_user["role"].lower() == "admin" or jwt_user["role"].lower() == "super")
+            and curr_status.lower == "pending"
+            and status.lower() == "approved"
+        ):
+            cursor.execute(
+                "UPDATE item SET quantity = quantity - 1 WHERE ID = %s",
+                (int(item_id),),
             )
 
         connection.commit()
