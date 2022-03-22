@@ -333,6 +333,7 @@ def update_status(reservation_id, **kwargs):
     start_date_time = post_data.get("startDateTime")
     end_date_time = post_data.get("endDateTime")
 
+    # * Retrieve uid from reservation for checking credentials
     try:
         cursor.execute("SELECT user FROM reservation WHERE ID = %s", (reservation_id,))
         uid = cursor.fetchone()
@@ -345,6 +346,7 @@ def update_status(reservation_id, **kwargs):
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
 
+    # * Retrieve old status from reservation
     try:
         cursor.execute(
             "SELECT status FROM reservation WHERE ID = %s", (reservation_id,)
@@ -354,6 +356,7 @@ def update_status(reservation_id, **kwargs):
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
 
+    # * Retrieve item id from reservation
     try:
         cursor.execute("SELECT item FROM reservation WHERE ID = %s", (reservation_id,))
         item_id = cursor.fetchone()
@@ -361,6 +364,7 @@ def update_status(reservation_id, **kwargs):
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
 
+    # * Retrieve new status from post data
     try:
         status = post_data["status"]
     except KeyError:
@@ -369,6 +373,7 @@ def update_status(reservation_id, **kwargs):
     if status.lower() not in VALID_RESERVATION_STATUSES:
         return create_error_response("Invalid reservation status", 400)
 
+    # * If a user is trying to change status to anything but "cancelled", error
     if (
         jwt_user["role"].lower() == "user"
         and jwt_user["ID"] == uid["user"]
@@ -400,6 +405,7 @@ def update_status(reservation_id, **kwargs):
                 (convert_javascript_date(end_date_time), reservation_id),
             )
 
+        # * If an admin is approving a reservation, decrement the quantity of that item
         if (
             (jwt_user["role"].lower() == "admin" or jwt_user["role"].lower() == "super")
             and curr_status.lower == "pending"
@@ -407,6 +413,15 @@ def update_status(reservation_id, **kwargs):
         ):
             cursor.execute(
                 "UPDATE item SET quantity = quantity - 1 WHERE ID = %s",
+                (int(item_id),),
+            )
+
+        # * If an admin is marking an item as returned, increment the quantity of that item
+        if (
+            jwt_user["role"].lower() == "admin" or jwt_user["role"].lower() == "super"
+        ) and status.lower() == "returned":
+            cursor.execute(
+                "UPDATE item SET quantity = quantity + 1 WHERE ID = %s",
                 (int(item_id),),
             )
 
