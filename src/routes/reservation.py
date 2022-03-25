@@ -333,33 +333,17 @@ def update_status(reservation_id, **kwargs):
     start_date_time = post_data.get("startDateTime")
     end_date_time = post_data.get("endDateTime")
 
-    # * Retrieve uid from reservation for checking credentials
-    try:
-        cursor.execute("SELECT user FROM reservation WHERE ID = %s", (reservation_id,))
-        uid = cursor.fetchone()
-
-        if jwt_user["role"].lower() == "user" and jwt_user["ID"] != uid["user"]:
-            return create_error_response(
-                "You don't have permission to view this resource", 403
-            )
-    except mysql.connector.Error as err:
-        current_app.logger.exception(str(err))
-        return create_error_response("An unexpected error occurred", 500)
-
-    # * Retrieve old status from reservation
+    # * Retrieve uid, old status, and item_id from the reservation
     try:
         cursor.execute(
-            "SELECT status FROM reservation WHERE ID = %s", (reservation_id,)
+            "SELECT user, status, item FROM reservation WHERE ID = %s",
+            (reservation_id,),
         )
-        curr_status = cursor.fetchone()
-    except mysql.connector.Error as err:
-        current_app.logger.exception(str(err))
-        return create_error_response("An unexpected error occurred", 500)
+        q_results = cursor.fetchone()
 
-    # * Retrieve item id from reservation
-    try:
-        cursor.execute("SELECT item FROM reservation WHERE ID = %s", (reservation_id,))
-        item_id = cursor.fetchone()
+        uid = q_results["user"]
+        curr_status = q_results["status"]
+        item_id = q_results["item"]
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
         return create_error_response("An unexpected error occurred", 500)
@@ -408,8 +392,8 @@ def update_status(reservation_id, **kwargs):
         # * If an admin is approving a reservation, decrement the quantity of that item
         if (
             (jwt_user["role"].lower() == "admin" or jwt_user["role"].lower() == "super")
-            and curr_status.lower == "pending"
-            and status.lower() == "approved"
+            and curr_status.lower == "approved"
+            and status.lower() == "checked out"
         ):
             cursor.execute(
                 "UPDATE item SET quantity = quantity - 1 WHERE ID = %s",
