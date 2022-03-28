@@ -1,6 +1,7 @@
 from flask_apscheduler import APScheduler
 from apscheduler.events import EVENT_JOB_EXECUTED, EVENT_JOB_MISSED
 import background_tasks.debug
+import background_tasks.notification
 from util.config import secrets
 
 
@@ -20,14 +21,26 @@ def init_scheduler(app):
     # For a list a parameters you can pass to the scheduler when adding a job, see:
     # https://apscheduler.readthedocs.io/en/3.x/modules/schedulers/base.html#apscheduler.schedulers.base.BaseScheduler.add_job
     scheduler.add_job(
-        func=lambda: background_tasks.debug.tick(app),
+        func=lambda: background_tasks.notification.due_date_iterator(app),
         id="tick",
         name="tick",
         trigger="interval",
-        seconds=5,
+        # seconds=30,
+        minutes=1,
+        # hours = 1,
         max_instances=1,
     )
+    """
+    scheduler.add_job(
+        func=lambda:background_tasks.debug.tick(app),
+        id="location",
+        name="location",
+        trigger="interval",
+        seconds=60,
+        max_instances=1,
+    )
+    """
 
     if secrets["SCHEDULER_ENABLED"]:
-        app.logger.info("Scheduler initialized")
+        # app.logger.info("Scheduler initialized")
         scheduler.start()
