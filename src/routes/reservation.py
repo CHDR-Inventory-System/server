@@ -304,9 +304,6 @@ def create_reservation(**kwargs):
         res_event = Event()
         rid = reservations[0]["ID"]
         iid = reservations[0]["item"]["item"]
-        print("Hello")
-        print(rid)
-        print(iid)
 
         query = f"SELECT name FROM itemChild WHERE item = {iid} AND main = 1"
         cursor.execute(query)
