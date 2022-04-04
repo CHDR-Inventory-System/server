@@ -300,18 +300,26 @@ def create_reservation(**kwargs):
 
         # START ICS
 
-        print("Start ICS")
-
         res_cal = Calendar()
         res_event = Event()
         rid = reservations[0]["ID"]
+        iid = reservations[0]["item"]["item"]
+        print("Hello")
+        print(rid)
+        print(iid)
+
+        query = f"SELECT name FROM itemChild WHERE item = {iid} AND main = 1"
+        cursor.execute(query)
+        itemName = cursor.fetchone()
+        itemName = itemName["name"]
+
         ics_path = f"{rid}.ics"
         email_body = "Use the attached file to add the Reservation to your calendar."
 
         res_event.name = "CHDR Reservation"
         res_event.begin = reservation["start_date_time"]
         res_event.end = reservation["end_date_time"]
-        res_event.description = "UCF CHDR Item Reservation"
+        res_event.description = f"UCF CHDR Reservation: {itemName}"
 
         res_cal.events.add(res_event)
 
@@ -329,9 +337,10 @@ def create_reservation(**kwargs):
         except SMTPException as e:
             current_app.logger.error(e.message)
 
-        os.remove(ics_path)
-
-        print("End ICS")
+        try:
+            os.remove(ics_path)
+        except OSError as e:
+            current_app.logger.error(e.message)
 
         # END ICS
 
