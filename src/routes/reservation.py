@@ -300,9 +300,11 @@ def create_reservation(**kwargs):
 
         # START ICS
 
+        print("Start ICS")
+
         res_cal = Calendar()
         res_event = Event()
-        rid = reservations["ID"]
+        rid = reservations[0]["ID"]
         ics_path = f"{rid}.ics"
         email_body = "Use the attached file to add the Reservation to your calendar."
 
@@ -328,6 +330,8 @@ def create_reservation(**kwargs):
             current_app.logger.error(e.message)
 
         os.remove(ics_path)
+
+        print("End ICS")
 
         # END ICS
 
