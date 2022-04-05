@@ -17,6 +17,7 @@ def convert_javascript_date(js_date: Union[str, int]):
     Takes either a Javascript date timestamp or a Javascript Date string
     and converts it to a string date that can be inserted into the database
     """
+
     if isinstance(js_date, int):
         date = datetime.fromtimestamp(js_date / 1_000)
     else:

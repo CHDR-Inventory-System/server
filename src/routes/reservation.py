@@ -9,6 +9,8 @@ from ics import Calendar, Event
 from util.email import Emailer
 from smtplib import SMTPException
 import os
+from datetime import datetime
+from dateutil import tz
 
 reservation_blueprint = Blueprint("reservation", __name__)
 
@@ -219,7 +221,6 @@ def create_reservation(**kwargs):
             post_data["startDateTime"]
         )
         reservation["end_date_time"] = convert_javascript_date(post_data["endDateTime"])
-
         reservation["status"] = post_data.get("status", "Pending")
         reservation["admin_id"] = post_data.get("adminId", None)
 
@@ -291,22 +292,32 @@ def create_reservation(**kwargs):
         cursor.execute(query, reservation)
         connection.commit()
 
-        # Return the newly created reservation
         reservations = query_reservations(
             "SELECT * FROM reservation WHERE ID = %(row_id)s",
             variables={"row_id": cursor.lastrowid},
             use_jsonify=False,
         )
 
-        # START ICS
+        # BEGIN ICS
+
+        date_format = "%Y-%m-%d %H:%M:%S"
+        event_start = reservation["start_date_time"]
+        event_end = reservation["end_date_time"]
+
+        event_start_dt = datetime.strptime(event_start, date_format).replace(
+            tzinfo=tz.gettz()
+        )
+        event_end_dt = datetime.strptime(event_end, date_format).replace(
+            tzinfo=tz.gettz()
+        )
+
+        event_start_dt = event_start_dt.astimezone(tz.tzutc())
+        event_end_dt = event_end_dt.astimezone(tz.tzutc())
 
         res_cal = Calendar()
         res_event = Event()
         rid = reservations[0]["ID"]
         iid = reservations[0]["item"]["item"]
-        print("Hello")
-        print(rid)
-        print(iid)
 
         query = f"SELECT name FROM itemChild WHERE item = {iid} AND main = 1"
         cursor.execute(query)
@@ -317,8 +328,8 @@ def create_reservation(**kwargs):
         email_body = "Use the attached file to add the Reservation to your calendar."
 
         res_event.name = "CHDR Reservation"
-        res_event.begin = reservation["start_date_time"]
-        res_event.end = reservation["end_date_time"]
+        res_event.begin = event_start_dt.strftime(date_format)
+        res_event.end = event_end_dt.strftime(date_format)
         res_event.description = f"UCF CHDR Reservation: {itemName}"
 
         res_cal.events.add(res_event)
