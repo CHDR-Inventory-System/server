@@ -2,15 +2,13 @@ import mysql.connector
 from util.database import Database
 from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from util.ics import create_calendar_for_reservation
 from util.response import create_error_response, convert_javascript_date
 from util.request import require_roles
 
-from ics import Calendar, Event
 from util.email import Emailer
 from smtplib import SMTPException
 import os
-from datetime import datetime
-from dateutil import tz
 
 reservation_blueprint = Blueprint("reservation", __name__)
 
@@ -298,63 +296,6 @@ def create_reservation(**kwargs):
             use_jsonify=False,
         )
 
-        # BEGIN ICS
-
-        date_format = "%Y-%m-%d %H:%M:%S"
-        event_start = reservation["start_date_time"]
-        event_end = reservation["end_date_time"]
-
-        event_start_dt = datetime.strptime(event_start, date_format).replace(
-            tzinfo=tz.gettz()
-        )
-        event_end_dt = datetime.strptime(event_end, date_format).replace(
-            tzinfo=tz.gettz()
-        )
-
-        event_start_dt = event_start_dt.astimezone(tz.tzutc())
-        event_end_dt = event_end_dt.astimezone(tz.tzutc())
-
-        res_cal = Calendar()
-        res_event = Event()
-        rid = reservations[0]["ID"]
-        iid = reservations[0]["item"]["item"]
-
-        query = f"SELECT name FROM itemChild WHERE item = {iid} AND main = 1"
-        cursor.execute(query)
-        itemName = cursor.fetchone()
-        itemName = itemName["name"]
-
-        ics_path = f"{rid}.ics"
-        email_body = "Use the attached file to add the Reservation to your calendar."
-
-        res_event.name = "CHDR Reservation"
-        res_event.begin = event_start_dt.strftime(date_format)
-        res_event.end = event_end_dt.strftime(date_format)
-        res_event.description = f"UCF CHDR Reservation: {itemName}"
-
-        res_cal.events.add(res_event)
-
-        with open(ics_path, "w") as f:
-            f.write(str(res_cal))
-
-        try:
-            Emailer.send_email(
-                post_data["email"],
-                "CHDR Item Reservation Confirmation",
-                email_body,
-                ics_path,
-            )
-            # Emailer.send_email("chdr email here", "CHDR Item Reservation", body, ics_path)
-        except SMTPException as e:
-            current_app.logger.error(e.message)
-
-        try:
-            os.remove(ics_path)
-        except OSError as e:
-            current_app.logger.error(e.message)
-
-        # END ICS
-
         return reservations[0]
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
@@ -423,6 +364,9 @@ def update_status(reservation_id, **kwargs):
     ):
         return create_error_response("Invalid reservation status", 400)
 
+    if jwt_user["role"].lower() in {"admin", "super"} and status.lower() == "approved":
+        fullSend = True
+
     try:
         cursor.execute(
             "UPDATE reservation SET status = %s WHERE ID = %s",
@@ -461,5 +405,47 @@ def update_status(reservation_id, **kwargs):
     # Safety check: this length of "updated_reservations" should always be 1
     if len(updated_reservations) == 0:
         return create_error_response("An unexpected error occurred", 500)
+
+    # BEGIN ICS
+
+    if fullSend:
+        reservation = updated_reservations[0]
+        calendar = create_calendar_for_reservation(reservation)
+        ics_path = f"{reservation_id}.ics"
+        email_body = "Use the attached file to add the Reservation to your calendar."
+
+        uid = reservation["user"]["ID"]
+        query = f"SELECT email FROM users WHERE ID = {uid}"
+        cursor.execute(query)
+        user_email = cursor.fetchone()
+        user_email = user_email["email"]
+
+        with open(ics_path, "w") as f:
+            f.write(str(calendar))
+
+        try:
+            Emailer.send_email(
+                user_email,
+                "CHDR Item Reservation Confirmation",
+                email_body,
+                ics_path,
+            )
+
+            # ? Won't need this if email is in sent-box
+            # Emailer.send_email(
+            #     "chdr email here",
+            #     "CHDR Item Reservation Confirmation",
+            #     body,
+            #     ics_path
+            # )
+        except SMTPException as e:
+            current_app.logger.error(e.message)
+
+        try:
+            os.remove(ics_path)
+        except OSError as e:
+            current_app.logger.error(e.message)
+
+    # END ICS
 
     return jsonify(updated_reservations[0])
