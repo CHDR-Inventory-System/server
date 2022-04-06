@@ -27,7 +27,7 @@ def init_scheduler(app):
         trigger="interval",
         # seconds=30,
         minutes=1,
-        # hours = 1,
+        # hours = 24,
         max_instances=1,
     )
     """

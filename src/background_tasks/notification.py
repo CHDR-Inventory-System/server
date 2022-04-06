@@ -26,7 +26,7 @@ def create_alert_email_body(name: str, days: int, list):
 
 
 @Database.with_connection()
-def retrieve_user_credentials(id_one: int, id_two: int, **kwargs):
+def retrieve_user_credentials(user_id: int, item_id: int, **kwargs):
     """
     This function is used to search through the database for the credentials of the users
     and items that is checked out. Later then returned as a list
@@ -34,23 +34,21 @@ def retrieve_user_credentials(id_one: int, id_two: int, **kwargs):
     creds = []
     cursor = kwargs["cursor"]
 
-    cursor.execute("SELECT * FROM users WHERE ID = %s", (id_one,))
+    cursor.execute("SELECT * FROM users WHERE ID = %s", (user_id,))
 
     user = cursor.fetchone()
     email = user["email"]
     name = user["fullName"]
 
-    cursor1 = kwargs["cursor"]
+    cursor.execute("SELECT name FROM itemchild WHERE item = %s", (item_id,))
 
-    cursor1.execute("SELECT name FROM itemchild WHERE item = %s", (id_two,))
-
-    item = cursor1.fetchall()
+    item = cursor.fetchall()
 
     item_name = []
     for row in item:
         item_name.append(row["name"])
 
-    creds = [email, name, item_name]
+    creds = {"email": email, "name": name, "item_name": item_name}
 
     return creds
 
@@ -60,7 +58,7 @@ def due_date_iterator(app: Flask, **kwargs):
     cursor = kwargs["cursor"]
     # connection = kwargs["connection"]
 
-    cursor.execute("SELECT user, endDateTime, status, item from reservation")
+    cursor.execute("SELECT ID, user, endDateTime, status, item from reservation")
     dates = cursor.fetchall()
 
     todays_date = datetime.now()
@@ -80,61 +78,61 @@ def due_date_iterator(app: Flask, **kwargs):
         item_moveable = item["moveable"]
 
         user_id = row["user"]
-        print("user id:", user_id, "days:", days_to_duedate.days)
+
         # If item is moveable then we check if the item is due in 1 day and send out an email
-        if item_moveable == 1 & (reservation_status == "Checked Out"):
+        if (item_moveable == 1) and (reservation_status == "Checked Out"):
+
             if days_to_duedate.days == 1:
                 text = retrieve_user_credentials(user_id, item_ID)
-                email = text[0]
-                my_name = text[1]
-                name_ofitem = text[2]
-                # print(name_ofitem)
+                user_email = text["email"]
+                user_name = text["name"]
+                item_names = text["item_name"]
+
                 body = create_alert_email_body(
-                    my_name,
+                    user_name,
                     days_to_duedate.days,
-                    name_ofitem,
+                    item_names,
                 )
                 with app.app_context():
                     try:
-                        Emailer.send_email(email, "Due date notification", body)
-                        print("1:", my_name)
+                        Emailer.send_email(user_email, "Due date notification", body)
+
                         print(jsonify({"status": "Success"}))
                     except SMTPException as err:
                         current_app.logger.exception(str(err))
             elif days_to_duedate.days == 2:
                 text = retrieve_user_credentials(user_id, item_ID)
-                email = text[0]
-                my_name = text[1]
-                name_ofitem = text[2]
-                # print(name_ofitem)
+                user_email = text["email"]
+                user_name = text["name"]
+                item_names = text["item_name"]
+
                 body = create_alert_email_body(
-                    my_name,
+                    user_name,
                     days_to_duedate.days,
-                    name_ofitem,
+                    item_names,
                 )
                 with app.app_context():
                     try:
-                        Emailer.send_email(email, "Due date notification", body)
-                        print("2:", my_name)
+                        Emailer.send_email(user_email, "Due date notification", body)
+
                         print(jsonify({"status": "Success"}))
                     except SMTPException as err:
                         current_app.logger.exception(str(err))
             elif days_to_duedate.days == 7:
                 text = retrieve_user_credentials(user_id, item_ID)
-                email = text[0]
-                my_name = text[1]
-                name_ofitem = text[2]
-                # print(name_ofitem)
-                body = create_alert_email_body(
-                    my_name,
-                    days_to_duedate.days,
-                    name_ofitem,
-                )
+                user_email = text["email"]
+                user_name = text["name"]
+                item_names = text["item_name"]
 
+                body = create_alert_email_body(
+                    user_name,
+                    days_to_duedate.days,
+                    item_names,
+                )
                 with app.app_context():
                     try:
-                        Emailer.send_email(email, "Due date notification", body)
-                        print("7:", my_name)
+                        Emailer.send_email(user_email, "Due date notification", body)
+
                         print(jsonify({"status": "Success"}))
                     except SMTPException as err:
                         current_app.logger.exception(str(err))
