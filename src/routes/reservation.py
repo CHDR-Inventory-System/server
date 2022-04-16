@@ -296,6 +296,46 @@ def create_reservation(**kwargs):
             use_jsonify=False,
         )
 
+        # BEGIN ICS
+
+        res = reservations[0]
+        res_id = res["ID"]
+        calendar = create_calendar_for_reservation(reservation)
+        ics_path = f"{res_id}.ics"
+        email_body = """
+            Your reservation has been created.
+            Use the attached file to add the reservation to your calendar.
+            """
+
+        user_email = post_data["email"]
+        with open(ics_path, "w") as f:
+            f.write(str(calendar))
+
+        try:
+            Emailer.send_email(
+                user_email,
+                "CHDR Item Reservation Creation",
+                email_body,
+                ics_path,
+            )
+
+            # ? Won't need this if email is in sent-box
+            # Emailer.send_email(
+            #     "chdr email here",
+            #     "CHDR Item Reservation Confirmation",
+            #     body,
+            #     ics_path
+            # )
+        except SMTPException as e:
+            current_app.logger.error(e.message)
+
+        try:
+            os.remove(ics_path)
+        except OSError as e:
+            current_app.logger.error(e.message)
+
+        # END ICS
+
         return reservations[0]
     except mysql.connector.Error as err:
         current_app.logger.exception(str(err))
@@ -364,7 +404,10 @@ def update_status(reservation_id, **kwargs):
     ):
         return create_error_response("Invalid reservation status", 400)
 
-    if jwt_user["role"].lower() in {"admin", "super"} and status.lower() == "approved":
+    if jwt_user["role"].lower() in {"admin", "super"} and status.lower() in {
+        "approved",
+        "checked out",
+    }:
         fullSend = True
 
     try:
