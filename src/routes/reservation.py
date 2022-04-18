@@ -1,3 +1,4 @@
+from util.config import secrets
 import mysql.connector
 from util.database import Database
 from flask import Blueprint, current_app, jsonify, request
@@ -314,18 +315,11 @@ def create_reservation(**kwargs):
         try:
             Emailer.send_email(
                 user_email,
-                "CHDR Item Reservation Creation",
+                "CHDR Item Reservation Confirmation",
                 email_body,
                 ics_path,
+                cc=secrets["EMAIL_USERNAME"],
             )
-
-            # ? Won't need this if email is in sent-box
-            # Emailer.send_email(
-            #     "chdr email here",
-            #     "CHDR Item Reservation Confirmation",
-            #     body,
-            #     ics_path
-            # )
         except SMTPException as e:
             current_app.logger.error(e.message)
 
@@ -472,15 +466,8 @@ def update_status(reservation_id, **kwargs):
                 "CHDR Item Reservation Confirmation",
                 email_body,
                 ics_path,
+                cc=secrets["EMAIL_USERNAME"],
             )
-
-            # ? Won't need this if email is in sent-box
-            # Emailer.send_email(
-            #     "chdr email here",
-            #     "CHDR Item Reservation Confirmation",
-            #     body,
-            #     ics_path
-            # )
         except SMTPException as e:
             current_app.logger.error(e.message)
 
