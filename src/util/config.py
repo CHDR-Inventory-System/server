@@ -15,14 +15,11 @@ secrets = {
     "EMAIL_PORT": os.getenv("EMAIL_PORT"),
     "EMAIL_USE_SSL": os.getenv("EMAIL_USE_SSL").lower() == "true",
     "EMAIL_USE_TLS": os.getenv("EMAIL_USE_TLS").lower() == "true",
-    "LDAP_SERVER": os.getenv("LDAP_SERVER"),
-    "BASE_DN": os.getenv("BASE_DN"),
-    "DOMAIN": os.getenv("DOMAIN"),
     "IMAGE_UPLOAD_FOLDER": os.getenv("IMAGE_UPLOAD_FOLDER", default="./images"),
-    "BASE_URL": os.getenv("BASE_URL", default=""),
     "SCHEDULER_ENABLED": (
         os.getenv("SCHEDULER_ENABLED", default="true").lower() == "true"
     ),
+    "BASE_URL": os.getenv("BASE_URL", default="http://127.0.0.1/4565"),
 }
 
 

@@ -2,8 +2,10 @@ import mysql.connector
 import os
 from io import BytesIO
 from flask import Blueprint, jsonify, current_app, request
+from flask_jwt_extended import jwt_required
 from util.database import Database
 from util.response import create_error_response, convert_javascript_date
+from util.request import require_roles
 from util.config import secrets
 from util.imaging import compress_image
 from werkzeug.utils import secure_filename
@@ -18,8 +20,8 @@ VALID_IMAGE_EXTENSIONS = {"jpg", "png", "jpeg"}
 def query_by_id(item_id, **kwargs):
     cursor = kwargs["cursor"]
 
-    cursor.execute("SELECT * from itemImage WHERE itemChild = %s" % (item_id,))
-    images = cursor.fetchone()
+    cursor.execute("SELECT * from itemImage WHERE itemChild = %s", (item_id,))
+    images = cursor.fetchall()
 
     query = """
         SELECT
@@ -82,6 +84,7 @@ def query_by_id(item_id, **kwargs):
 
 
 @inventory_blueprint.route("/", methods=["GET"])
+@jwt_required()
 @Database.with_connection()
 def get_all(**kwargs):
     cursor = kwargs["cursor"]
@@ -141,6 +144,7 @@ def get_all(**kwargs):
 
 
 @inventory_blueprint.route("/<int:item_id>", methods=["DELETE"])
+@require_roles(["admin", "super"])
 @Database.with_connection()
 def delete_item(item_id, **kwargs):
     cursor = kwargs["cursor"]
@@ -156,14 +160,9 @@ def delete_item(item_id, **kwargs):
         item = cursor.fetchone()
 
         if item["main"]:
-            cursor.execute("SELECT ID FROM itemChild WHERE item = %s" % (item["item"],))
-            all_item_ids = [str(row["ID"]) for row in cursor.fetchall()]
-
             cursor.execute(
-                "SELECT imagePath from itemImage WHERE itemChild IN (%s)"
-                % ",".join(all_item_ids)
+                "SELECT imagePath from itemImage WHERE itemChild = %s", (item_id,)
             )
-
             image_paths = [row["imagePath"] for row in cursor.fetchall()]
 
             for image_path in image_paths:
@@ -171,6 +170,8 @@ def delete_item(item_id, **kwargs):
                     os.remove(image_path)
                 except (IsADirectoryError, FileNotFoundError) as err:
                     current_app.logger.exception(str(err))
+
+            cursor.execute("DELETE FROM reservation WHERE item = %s", (item["item"],))
 
     except Exception as err:
         current_app.logger.exception(str(err))
@@ -198,6 +199,7 @@ def delete_item(item_id, **kwargs):
 
 
 @inventory_blueprint.route("/<int:item_id>", methods=["GET"])
+@jwt_required()
 def get_item_by_id(item_id):
     try:
         item = query_by_id(item_id)
@@ -212,6 +214,7 @@ def get_item_by_id(item_id):
 
 
 @inventory_blueprint.route("/search", methods=["GET"])
+@jwt_required()
 @Database.with_connection()
 def get_item_by_name(**kwargs):
     cursor = kwargs["cursor"]
@@ -281,6 +284,7 @@ def get_item_by_name(**kwargs):
 
 
 @inventory_blueprint.route("/barcode/<barcode>", methods=["GET"])
+@jwt_required()
 @Database.with_connection()
 def get_item_by_barcode(barcode, **kwargs):
     cursor = kwargs["cursor"]
@@ -331,6 +335,7 @@ def get_item_by_barcode(barcode, **kwargs):
 
 
 @inventory_blueprint.route("/<int:item_id>/uploadImage", methods=["POST"])
+@require_roles(["admin", "super"])
 @Database.with_connection()
 def upload_image(item_id, **kwargs):
     """
@@ -400,6 +405,7 @@ def upload_image(item_id, **kwargs):
 
 
 @inventory_blueprint.route("/image/<int:image_id>", methods=["DELETE"])
+@require_roles(["admin", "super"])
 @Database.with_connection()
 def delete_image(image_id, **kwargs):
     cursor = kwargs["cursor"]
@@ -429,6 +435,7 @@ def delete_image(image_id, **kwargs):
 
 
 @inventory_blueprint.route("/add", methods=["POST"])
+@require_roles(["admin", "super"])
 @Database.with_connection()
 def add_item(**kwargs):
     cursor = kwargs["cursor"]
@@ -530,6 +537,7 @@ def add_item(**kwargs):
 
 
 @inventory_blueprint.route("/<int:item_id>/addChild", methods=["POST"])
+@require_roles(["admin", "super"])
 @Database.with_connection()
 def add_child_item(item_id, **kwargs):
     """
@@ -596,6 +604,7 @@ def add_child_item(item_id, **kwargs):
 
 
 @inventory_blueprint.route("/<int:item_id>", methods=["PUT"])
+@require_roles(["admin", "super"])
 @Database.with_connection()
 def update_item(item_id, **kwargs):
     cursor = kwargs["cursor"]
@@ -718,6 +727,7 @@ def update_item(item_id, **kwargs):
 
 
 @inventory_blueprint.route("/<int:item_id>/retire", methods=["PUT"])
+@require_roles(["admin", "super"])
 @Database.with_connection()
 def retire_item(item_id, **kwargs):
     """

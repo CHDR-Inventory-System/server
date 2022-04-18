@@ -1,6 +1,6 @@
 APScheduler==3.8.1
 bcrypt==3.2.0
-black==21.10b0
+black==22.3.0
 blinker==1.4
 cffi==1.15.0
 cfgv==3.3.1
@@ -52,3 +52,4 @@ virtualenv==20.13.0
 Werkzeug==2.0.2
 zope.event==4.5.0
 zope.interface==5.4.0
+ics==0.7
