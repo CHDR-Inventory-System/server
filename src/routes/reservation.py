@@ -299,34 +299,35 @@ def create_reservation(**kwargs):
 
         # BEGIN ICS
 
-        res = reservations[0]
-        res_id = res["ID"]
-        calendar = create_calendar_for_reservation(reservation)
-        ics_path = f"{res_id}.ics"
-        email_body = """
-            Your reservation has been created.
-            Use the attached file to add the reservation to your calendar.
-            """
+        if reservation["status"].lower in {"approved", "checked out"}:
+            res = reservations[0]
+            res_id = res["ID"]
+            calendar = create_calendar_for_reservation(reservation)
+            ics_path = f"{res_id}.ics"
+            email_body = """
+                Your reservation has been created.
+                Use the attached file to add the reservation to your calendar.
+                """
 
-        user_email = post_data["email"]
-        with open(ics_path, "w") as f:
-            f.write(str(calendar))
+            user_email = post_data["email"]
+            with open(ics_path, "w") as f:
+                f.write(str(calendar))
 
-        try:
-            Emailer.send_email(
-                user_email,
-                "CHDR Item Reservation Confirmation",
-                email_body,
-                ics_path,
-                cc=secrets["EMAIL_USERNAME"],
-            )
-        except SMTPException as e:
-            current_app.logger.error(e.message)
+            try:
+                Emailer.send_email(
+                    user_email,
+                    "CHDR Item Reservation Confirmation",
+                    email_body,
+                    ics_path,
+                    cc=secrets["EMAIL_USERNAME"],
+                )
+            except SMTPException as e:
+                current_app.logger.error(e.message)
 
-        try:
-            os.remove(ics_path)
-        except OSError as e:
-            current_app.logger.error(e.message)
+            try:
+                os.remove(ics_path)
+            except OSError as e:
+                current_app.logger.error(e.message)
 
         # END ICS
 
@@ -362,6 +363,7 @@ def update_status(reservation_id, **kwargs):
 
     jwt_user = get_jwt_identity()
     post_data = request.get_json()
+    fullSend = False
 
     if not post_data:
         return create_error_response("A body is required", 400)
