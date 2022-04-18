@@ -12,7 +12,7 @@ def create_calendar_for_reservation(reservation, **kwargs):
 
     cursor = kwargs["cursor"]
     date_format = "%Y-%m-%d %H:%M:%S"
-    iid = reservation["item"]
+    iid = reservation["item"]["item"]
     start = reservation["startDateTime"]
     end = reservation["endDateTime"]
 
