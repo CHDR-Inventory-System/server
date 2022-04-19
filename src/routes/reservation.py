@@ -198,6 +198,7 @@ def get_reservations_by_id(reservation_id):
 
 
 @reservation_blueprint.route("/", methods=["POST"])
+@jwt_required()
 @Database.with_connection()
 def create_reservation(**kwargs):
     cursor = kwargs["cursor"]

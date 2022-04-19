@@ -25,11 +25,10 @@ def init_scheduler(app):
         id="tick",
         name="tick",
         trigger="interval",
-        # seconds=30,
-        minutes=1,
-        # hours = 24,
+        hours=24,
         max_instances=1,
     )
+
     """
     scheduler.add_job(
         func=lambda:background_tasks.debug.tick(app),
@@ -42,5 +41,5 @@ def init_scheduler(app):
     """
 
     if secrets["SCHEDULER_ENABLED"]:
-        # app.logger.info("Scheduler initialized")
+        app.logger.info("Scheduler initialized")
         scheduler.start()
