@@ -16,6 +16,9 @@ secrets = {
     "EMAIL_USE_SSL": os.getenv("EMAIL_USE_SSL").lower() == "true",
     "EMAIL_USE_TLS": os.getenv("EMAIL_USE_TLS").lower() == "true",
     "IMAGE_UPLOAD_FOLDER": os.getenv("IMAGE_UPLOAD_FOLDER", default="./images"),
+    "SCHEDULER_ENABLED": (
+        os.getenv("SCHEDULER_ENABLED", default="true").lower() == "true"
+    ),
     "BASE_URL": os.getenv("BASE_URL", default="http://127.0.0.1/4565"),
 }
 

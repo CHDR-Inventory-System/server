@@ -70,7 +70,7 @@ def query_by_id(item_id, **kwargs):
 
         for child in children:
             cursor.execute(
-                "SELECT * FROM itemImage WHERE itemChild = %s", (child["ID"],)
+                "SELECT * FROM itemImage WHERE itemChild = %s" % (child["ID"],)
             )
 
             child["images"] = cursor.fetchall()
@@ -147,9 +147,6 @@ def get_all(**kwargs):
 @require_roles(["admin", "super"])
 @Database.with_connection()
 def delete_item(item_id, **kwargs):
-    """
-    NOTE: Here, "item_id" refers to the ID in the "itemChild" table
-    """
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
 
@@ -158,7 +155,7 @@ def delete_item(item_id, **kwargs):
     # If this step fails for some reason, we can still try to delete the item
     # from the database
     try:
-        cursor.execute("SELECT item, main FROM itemChild WHERE ID = %s", (item_id,))
+        cursor.execute("SELECT item, main FROM itemChild WHERE ID = %s" % (item_id,))
 
         item = cursor.fetchone()
 
@@ -180,20 +177,17 @@ def delete_item(item_id, **kwargs):
         current_app.logger.exception(str(err))
 
     try:
-        cursor.execute("SELECT item, main FROM itemChild WHERE ID = %s", (item_id,))
+        cursor.execute("SELECT item, main FROM itemChild WHERE ID = %s" % (item_id,))
+
         item = cursor.fetchone()
 
-        if not item:
-            return create_error_response("Item not found", 404)
-
-        # If this is the main item, we'll just delete the base item from the item table
+        # If this is the main item, we also need to delete its associated children
         if item["main"]:
             cursor.execute(
-                "DELETE FROM item WHERE ID = %s",
-                (item["item"],),
+                "DELETE FROM itemChild WHERE item = %s AND main = 0" % (item["item"])
             )
-        else:
-            cursor.execute("DELETE FROM itemChild WHERE ID = %s", (item_id,))
+
+        cursor.execute("DELETE FROM itemChild WHERE ID = %s" % (item_id,))
 
         connection.commit()
     except mysql.connector.Error as err:
@@ -249,7 +243,9 @@ def get_item_by_name(**kwargs):
             row["moveable"] = bool(row["moveable"])
             row["main"] = bool(row["main"])
 
-            cursor.execute("SELECT * FROM itemImage WHERE itemChild = %s", (row["ID"],))
+            cursor.execute(
+                "SELECT * FROM itemImage WHERE itemChild = %s" % (row["ID"],)
+            )
             row["images"] = cursor.fetchall()
 
             query = """
@@ -275,7 +271,7 @@ def get_item_by_name(**kwargs):
                 child["available"] = bool(child["available"])
 
                 cursor.execute(
-                    "SELECT * FROM itemImage WHERE itemChild = %s", (child["ID"],)
+                    "SELECT * FROM itemImage WHERE itemChild = %s" % (child["ID"],)
                 )
                 child["images"] = cursor.fetchall()
 
@@ -319,7 +315,9 @@ def get_item_by_barcode(barcode, **kwargs):
         child_items = [item for item in all_items if not bool(item["main"])]
 
         for row in child_items + [main_item]:
-            cursor.execute("SELECT * FROM itemImage WHERE itemChild = %s", (row["ID"],))
+            cursor.execute(
+                "SELECT * FROM itemImage WHERE itemChild = %s" % (row["ID"],)
+            )
             row["images"] = cursor.fetchall()
             row["children"] = []
             row["available"] = bool(row["available"])
@@ -348,7 +346,6 @@ def upload_image(item_id, **kwargs):
     cursor = kwargs["cursor"]
     connection = kwargs["connection"]
     post_data = request.get_json() or {}
-    image = None
 
     try:
         # Check to see if we received a FormData object
@@ -357,23 +354,22 @@ def upload_image(item_id, **kwargs):
         # No form data was passed so check the request body instead
         pass
 
-    # We didn't get a FormData object so encode the base64 image as a
-    # byte stream and save it
-    if not image:
-        try:
-            filename = post_data["filename"]
-            content_type = "image/png" if filename.endswith("png") else "image/jpeg"
-            file_data = BytesIO(base64.b64decode(post_data["image"]))
+    try:
+        # We didn't get a FormData object so encode the base64 image as a
+        # byte stream and save it
+        filename = post_data["filename"]
+        content_type = "image/png" if filename.endswith("png") else "image/jpeg"
+        file_data = BytesIO(base64.b64decode(post_data["image"]))
 
-            image = FileStorage(
-                stream=file_data,
-                filename=filename,
-                content_type=content_type,
-            )
-        except KeyError:
-            return create_error_response("An image is required", 400)
-        except Exception:
-            return create_error_response("An unexpected error occurred", 500)
+        image = FileStorage(
+            stream=file_data,
+            filename=filename,
+            content_type=content_type,
+        )
+    except KeyError:
+        return create_error_response("An image is required", 400)
+    except Exception:
+        return create_error_response("An unexpected error occurred", 500)
 
     # Make sure we only received images with valid extensions
     if image.filename.split(".")[-1] not in VALID_IMAGE_EXTENSIONS:
@@ -392,22 +388,14 @@ def upload_image(item_id, **kwargs):
             INSERT INTO itemImage (itemChild, imagePath, imageURL)
             VALUES (%s, %s, %s)
         """
-        cursor.execute(query, (item_id, image_path, image_url))
+        cursor.execute(query % (item_id, image_path, image_url))
 
         image.save(image_path)
         compress_image(image_path)
 
         connection.commit()
 
-        cursor.execute(
-            """
-            SELECT ID, created, imagePath, imageURL, itemChild
-            FROM itemImage WHERE ID = %s
-            """,
-            (cursor.lastrowid,),
-        )
-
-        return jsonify(cursor.fetchone())
+        return jsonify({"imageID": cursor.lastrowid})
     except Exception as err:
         current_app.logger.exception(str(err))
         connection.rollback()
@@ -424,14 +412,14 @@ def delete_image(image_id, **kwargs):
     connection = kwargs["connection"]
 
     try:
-        cursor.execute("SELECT imagePath FROM itemImage WHERE ID = %s", (image_id,))
+        cursor.execute("SELECT imagePath FROM itemImage WHERE ID = %s" % (image_id,))
 
         file = cursor.fetchone()
 
         if not file:
             return create_error_response("Image not found", 404)
 
-        cursor.execute("DELETE FROM itemImage WHERE ID = %s", (image_id,))
+        cursor.execute("DELETE FROM itemImage WHERE ID = %s" % (image_id,))
         connection.commit()
     except mysql.connector.errors.Error as err:
         connection.rollback()
@@ -760,7 +748,7 @@ def retire_item(item_id, **kwargs):
         return create_error_response("Parameter date is required", 400)
 
     try:
-        cursor.execute("SELECT item FROM itemChild WHERE ID = %s", (item_id,))
+        cursor.execute("SELECT item FROM itemChild WHERE ID = %s" % (item_id,))
 
         item = cursor.fetchone()
 

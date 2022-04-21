@@ -11,6 +11,7 @@ from util.email import Emailer
 from smtplib import SMTPException
 import os
 
+
 reservation_blueprint = Blueprint("reservation", __name__)
 
 VALID_RESERVATION_STATUSES = {
@@ -197,6 +198,7 @@ def get_reservations_by_id(reservation_id):
 
 
 @reservation_blueprint.route("/", methods=["POST"])
+@jwt_required()
 @Database.with_connection()
 def create_reservation(**kwargs):
     cursor = kwargs["cursor"]

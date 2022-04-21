@@ -6,6 +6,7 @@ import logging
 from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
+from util.scheduler import init_scheduler
 from util.config import secrets
 from util.email import Emailer
 from flask_jwt_extended import (
@@ -19,9 +20,12 @@ from flask_jwt_extended import (
 from flask_jwt_extended.config import config as jwt_config
 from datetime import datetime, timedelta, timezone
 
+
 app = Flask(__name__)
+
 app.config["IMAGE_FOLDER"] = secrets["IMAGE_UPLOAD_FOLDER"]
 app.config["JWT_SECRET_KEY"] = secrets["JWT_SECRET_KEY"]
+app.config["SCHEDULER_TIMEZONE"] = "America/New_York"
 app.config["MAIL_SERVER"] = secrets["EMAIL_SERVER"]
 app.config["MAIL_PORT"] = secrets["EMAIL_PORT"]
 app.config["MAIL_USERNAME"] = secrets["EMAIL_USERNAME"]
@@ -33,8 +37,10 @@ app.config["JWT_ERROR_MESSAGE_KEY"] = "error"
 app.config["JWT_TOKEN_LOCATION"] = ["cookies", "headers"]
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = timedelta(hours=12)
 
+
 CORS(app)
 JWTManager(app)
+init_scheduler(app)
 Emailer.init(app)
 
 gunicorn_logger = logging.getLogger("gunicorn.error")
