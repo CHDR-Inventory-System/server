@@ -388,7 +388,7 @@ def upload_image(item_id, **kwargs):
             INSERT INTO itemImage (itemChild, imagePath, imageURL)
             VALUES (%s, %s, %s)
         """
-        cursor.execute(query % (item_id, image_path, image_url))
+        cursor.execute(query, (item_id, image_path, image_url))
 
         image.save(image_path)
         compress_image(image_path)
