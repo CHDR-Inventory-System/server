@@ -708,13 +708,23 @@ def update_item(item_id, **kwargs):
                 (location, item_id),
             )
 
+        # Quantity is a special case. If the quantity is 0, the item's status should
+        # be marked as unavailable. If the quantity is > 0, the item's status should
+        # be marked as available
         if quantity is not None:
+            values = {
+                "quantity": quantity,
+                "item_id": item_id,
+                "available": 0 if quantity == 0 else 1,
+            }
+
             cursor.execute(
                 """
-                UPDATE item SET quantity = %s
-                WHERE ID = (SELECT item from itemChild WHERE ID = %s)
+                UPDATE item
+                SET quantity = %(quantity)s, available = %(available)s
+                WHERE ID = (SELECT item from itemChild WHERE ID = %(item_id)s)
                 """,
-                (quantity, item_id),
+                values,
             )
 
         connection.commit()
