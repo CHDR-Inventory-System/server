@@ -299,12 +299,32 @@ def create_reservation(**kwargs):
             use_jsonify=False,
         )
 
+        # Makes sure to update the quantity when an item is checked out
+        if reservation["status"].lower() == "checked out":
+            cursor.execute("SELECT quantity FROM item WHERE ID = %(item)s", reservation)
+            item = cursor.fetchone()
+
+            # Here, we need to check if the quantity is 1 because we're gonna decrement
+            # it right away. We need to check before we update the quantity because the
+            # change may not be reflected immediately
+            if item["quantity"] == 1:
+                cursor.execute(
+                    "UPDATE item SET available = 0 WHERE ID = %(item)s", reservation
+                )
+
+            cursor.execute(
+                "UPDATE item SET quantity = quantity - 1 WHERE ID = %(item)s",
+                reservation,
+            )
+
+            connection.commit()
+
         # BEGIN ICS
 
-        if reservation["status"].lower in {"approved", "checked out"}:
+        if reservation["status"].lower() in {"approved", "checked out"}:
             res = reservations[0]
             res_id = res["ID"]
-            calendar = create_calendar_for_reservation(reservation)
+            calendar = create_calendar_for_reservation(res)
             ics_path = f"{res_id}.ics"
             email_body = """
                 Your reservation has been created.
@@ -407,6 +427,52 @@ def update_status(reservation_id, **kwargs):
         "checked out",
     }:
         fullSend = True
+
+    # If the item is checked out, we need to decrement the quantity
+    if status.lower() == "checked out":
+        cursor.execute(
+            """
+            UPDATE item SET quantity = quantity - 1 WHERE ID = (
+                SELECT item FROM reservation WHERE ID = %s
+            )
+            """,
+            (reservation_id,),
+        )
+        connection.commit()
+
+        cursor.execute(
+            """
+            SELECT quantity FROM item WHERE ID = (
+                SELECT item FROM reservation WHERE ID = %s
+            )
+            """,
+            (reservation_id,),
+        )
+
+        updated_item = cursor.fetchone()
+
+        # Makes sure to mark the item as unavailable if the the item is no longer in stock
+        if updated_item["quantity"] == 0:
+            cursor.execute(
+                """
+                UPDATE item SET available = 0 WHERE ID = (
+                    SELECT item FROM reservation WHERE ID = %s
+                )
+                """,
+                (reservation_id,),
+            )
+
+    # Once the item has been returned, we need to increment the quantity again
+    if status.lower() == "returned":
+        cursor.execute(
+            """
+            UPDATE item
+            SET quantity = quantity + 1, available = 1
+            WHERE ID = (SELECT item FROM reservation WHERE ID = %s)
+            """,
+            (reservation_id,),
+        )
+        connection.commit()
 
     try:
         cursor.execute(
